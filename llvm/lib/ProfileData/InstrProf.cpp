@@ -608,7 +608,7 @@ Error readAndDecodeStrings(StringRef NameStrings,
     StringRef ArchRef(Architecture); 
     NameStrings.split(Names, getInstrProfNameSeparator());
     for (StringRef &Name : Names)
-      if (Error E = NameCallback(Name.str()+ ":" + ArchRef.str()*/))
+      if (Error E = NameCallback(Name.str()+ ":" + ArchRef.str()))
         return E;
 
     while (P < EndP && *P == 0)

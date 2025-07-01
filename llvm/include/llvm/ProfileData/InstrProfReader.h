@@ -106,7 +106,7 @@ public:
   /// Read a single record.
   virtual Error readNextRecord(NamedInstrProfRecord &Record) = 0;
 
-  /// Read a list of binary ids.
+  /// Read a list of biny ids.
   virtual Error readBinaryIds(std::vector<llvm::object::BuildID> &BinaryIds) {
     return success();
   }

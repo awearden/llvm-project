@@ -556,7 +556,7 @@ Error RawInstrProfReader<IntPtrT>::readNextHeader(const char *CurrentPos) {
 template <class IntPtrT>
 Error RawInstrProfReader<IntPtrT>::createSymtab(InstrProfSymtab &Symtab) { //STEP 5
   
-  Symtab.setArchitecture(Architecture)
+  Symtab.setArchitecture(Architecture);
   
   if (Error E = Symtab.create(StringRef(NamesStart, NamesEnd - NamesStart),
                               StringRef(VNamesStart, VNamesEnd - VNamesStart)))
