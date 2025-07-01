@@ -573,6 +573,50 @@ Error InstrProfSymtab::addVTableWithName(GlobalVariable &VTable,
 }
 
 Error readAndDecodeStrings(StringRef NameStrings,
+                           std::function<Error(StringRef)> NameCallback, const std::string &Architecture) {
+  const uint8_t *P = NameStrings.bytes_begin();
+  const uint8_t *EndP = NameStrings.bytes_end();
+  while (P < EndP) {
+    uint32_t N;
+    uint64_t UncompressedSize = decodeULEB128(P, &N);
+    P += N;
+    uint64_t CompressedSize = decodeULEB128(P, &N);
+    P += N;
+    const bool IsCompressed = (CompressedSize != 0);
+    SmallVector<uint8_t, 128> UncompressedNameStrings;
+    StringRef NameStrings;
+    if (IsCompressed) {
+      if (!llvm::compression::zlib::isAvailable())
+        return make_error<InstrProfError>(instrprof_error::zlib_unavailable);
+
+      if (Error E = compression::zlib::decompress(ArrayRef(P, CompressedSize),
+                                                  UncompressedNameStrings,
+                                                  UncompressedSize)) {
+        consumeError(std::move(E));
+        return make_error<InstrProfError>(instrprof_error::uncompress_failed);
+      }
+      P += CompressedSize;
+      NameStrings = toStringRef(UncompressedNameStrings);
+    } else {
+      NameStrings =
+          StringRef(reinterpret_cast<const char *>(P), UncompressedSize);
+      P += UncompressedSize;
+    }
+    // Now parse the name strings.
+    SmallVector<StringRef, 0> Names;
+    StringRef ArchRef(Architecture); 
+    NameStrings.split(Names, getInstrProfNameSeparator());
+    for (StringRef &Name : Names)
+      if (Error E = NameCallback(Name.str()+ ":" + ArchRef.str()*/))
+        return E;
+
+    while (P < EndP && *P == 0)
+      P++;
+  }
+  return Error::success();
+}
+
+Error readAndDecodeStrings(StringRef NameStrings,
                            std::function<Error(StringRef)> NameCallback) {
   const uint8_t *P = NameStrings.bytes_begin();
   const uint8_t *EndP = NameStrings.bytes_end();
@@ -616,21 +660,18 @@ Error readAndDecodeStrings(StringRef NameStrings,
 }
 
 Error InstrProfSymtab::create(StringRef NameStrings) {
-  return readAndDecodeStrings(
-      NameStrings,
-      std::bind(&InstrProfSymtab::addFuncName, this, std::placeholders::_1));
+  return readAndDecodeStrings(NameStrings, std::bind(&InstrProfSymtab::addFuncName, this, std::placeholders::_1));
 }
 
 Error InstrProfSymtab::create(StringRef FuncNameStrings,
                               StringRef VTableNameStrings) {
-  if (Error E = readAndDecodeStrings(FuncNameStrings,
-                                     std::bind(&InstrProfSymtab::addFuncName,
-                                               this, std::placeholders::_1)))
+  const std::string &Architecture = getArchitecture();                                
+  if (Error E = readAndDecodeStrings(FuncNameStrings, std::bind(&InstrProfSymtab::addFuncName, this, std::placeholders::_1), Architecture))
     return E;
 
   return readAndDecodeStrings(
       VTableNameStrings,
-      std::bind(&InstrProfSymtab::addVTableName, this, std::placeholders::_1));
+      std::bind(&InstrProfSymtab::addVTableName, this, std::placeholders::_1), Architecture);
 }
 
 Error InstrProfSymtab::initVTableNamesFromCompressedStrings(

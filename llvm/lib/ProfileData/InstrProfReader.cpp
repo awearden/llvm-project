@@ -18,7 +18,7 @@
 #include "llvm/ADT/StringRef.h"
 #include "llvm/IR/ProfileSummary.h"
 #include "llvm/ProfileData/InstrProf.h"
-// #include "llvm/ProfileData/MemProf.h"
+#include "llvm/ProfileData/MemProf.h"
 #include "llvm/ProfileData/MemProfRadixTree.h"
 #include "llvm/ProfileData/ProfileCommon.h"
 #include "llvm/ProfileData/SymbolRemappingReader.h"
@@ -28,6 +28,7 @@
 #include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/VirtualFileSystem.h"
+#include "llvm/ProfileData/InstrProfReader.h"
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
@@ -153,25 +154,26 @@ static void printBinaryIdsInternal(raw_ostream &OS,
   }
 }
 
-Expected<std::unique_ptr<InstrProfReader>> InstrProfReader::create(
+Expected<std::unique_ptr<InstrProfReader>> InstrProfReader::create( //STEP 1
     const Twine &Path, vfs::FileSystem &FS,
     const InstrProfCorrelator *Correlator,
     const object::BuildIDFetcher *BIDFetcher,
     const InstrProfCorrelator::ProfCorrelatorKind BIDFetcherCorrelatorKind,
-    std::function<void(Error)> Warn) {
+    std::function<void(Error)> Warn, 
+    const std::string &Architecture) {
   // Set up the buffer to read.
   auto BufferOrError = setupMemoryBuffer(Path, FS);
   if (Error E = BufferOrError.takeError())
     return std::move(E);
   return InstrProfReader::create(std::move(BufferOrError.get()), Correlator,
-                                 BIDFetcher, BIDFetcherCorrelatorKind, Warn);
+                                 BIDFetcher, BIDFetcherCorrelatorKind, Warn, Architecture);
 }
 
 Expected<std::unique_ptr<InstrProfReader>> InstrProfReader::create(
     std::unique_ptr<MemoryBuffer> Buffer, const InstrProfCorrelator *Correlator,
     const object::BuildIDFetcher *BIDFetcher,
     const InstrProfCorrelator::ProfCorrelatorKind BIDFetcherCorrelatorKind,
-    std::function<void(Error)> Warn) {
+    std::function<void(Error)> Warn, const std::string &Architecture) {
   if (Buffer->getBufferSize() == 0)
     return make_error<InstrProfError>(instrprof_error::empty_raw_profile);
 
@@ -193,9 +195,12 @@ Expected<std::unique_ptr<InstrProfReader>> InstrProfReader::create(
     return make_error<InstrProfError>(instrprof_error::unrecognized_format);
 
   // Initialize the reader and return the result.
+
+  if(Result){
+    Result->setArchitecture(Architecture);
+  }
   if (Error E = initializeReader(*Result))
     return std::move(E);
-
   return std::move(Result);
 }
 
@@ -509,7 +514,7 @@ bool RawInstrProfReader<IntPtrT>::hasFormat(const MemoryBuffer &DataBuffer) {
 }
 
 template <class IntPtrT>
-Error RawInstrProfReader<IntPtrT>::readHeader() {
+Error RawInstrProfReader<IntPtrT>::readHeader() { //STEP 2
   if (!hasFormat(*DataBuffer))
     return error(instrprof_error::bad_magic);
   if (DataBuffer->getBufferSize() < sizeof(RawInstrProf::Header))
@@ -549,7 +554,10 @@ Error RawInstrProfReader<IntPtrT>::readNextHeader(const char *CurrentPos) {
 }
 
 template <class IntPtrT>
-Error RawInstrProfReader<IntPtrT>::createSymtab(InstrProfSymtab &Symtab) {
+Error RawInstrProfReader<IntPtrT>::createSymtab(InstrProfSymtab &Symtab) { //STEP 5
+  
+  Symtab.setArchitecture(Architecture)
+  
   if (Error E = Symtab.create(StringRef(NamesStart, NamesEnd - NamesStart),
                               StringRef(VNamesStart, VNamesEnd - VNamesStart)))
     return error(std::move(E));
@@ -580,7 +588,7 @@ Error RawInstrProfReader<IntPtrT>::createSymtab(InstrProfSymtab &Symtab) {
 template <class IntPtrT>
 Error RawInstrProfReader<IntPtrT>::readHeader(
     const RawInstrProf::Header &Header) {
-  Version = swap(Header.Version);
+  Version = swap(Header.Version); //STEP 4
   if (GET_VERSION(Version) != RawInstrProf::Version)
     return error(instrprof_error::raw_profile_version_mismatch,
                  ("Profile uses raw profile format version = " +
@@ -697,7 +705,7 @@ Error RawInstrProfReader<IntPtrT>::readHeader(
   ValueDataStart = reinterpret_cast<const uint8_t *>(Start + ValueDataOffset);
 
   std::unique_ptr<InstrProfSymtab> NewSymtab = std::make_unique<InstrProfSymtab>();
-  if (Error E = createSymtab(*NewSymtab))
+  if (Error E = createSymtab(*NewSymtab)) //IMPORTANT FUNCTION CALL
     return E;
 
   Symtab = std::move(NewSymtab);
@@ -1551,6 +1559,20 @@ memprof::AllMemProfData IndexedMemProfReader::getAllMemProfData() const {
     Pair.GUID = Key;
     Pair.Record = std::move(*Record);
     AllMemProfData.HeapProfileRecords.push_back(std::move(Pair));
+  }
+  // Populate the data access profiles for yaml output.
+  if (DataAccessProfileData != nullptr) {
+    for (const auto &[SymHandleRef, RecordRef] :
+         DataAccessProfileData->getRecords())
+      AllMemProfData.YamlifiedDataAccessProfiles.Records.push_back(
+          memprof::DataAccessProfRecord(SymHandleRef, RecordRef.AccessCount,
+                                        RecordRef.Locations));
+    for (StringRef ColdSymbol : DataAccessProfileData->getKnownColdSymbols())
+      AllMemProfData.YamlifiedDataAccessProfiles.KnownColdSymbols.push_back(
+          ColdSymbol.str());
+    for (uint64_t Hash : DataAccessProfileData->getKnownColdHashes())
+      AllMemProfData.YamlifiedDataAccessProfiles.KnownColdStrHashes.push_back(
+          Hash);
   }
   return AllMemProfData;
 }

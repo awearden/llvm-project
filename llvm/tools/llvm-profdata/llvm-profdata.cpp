@@ -16,11 +16,13 @@
 #include "llvm/Debuginfod/HTTPClient.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/Object/Binary.h"
+#include "llvm/ProfileData/DataAccessProf.h"
 #include "llvm/ProfileData/InstrProfCorrelator.h"
 #include "llvm/ProfileData/InstrProfReader.h"
 #include "llvm/ProfileData/InstrProfWriter.h"
 #include "llvm/ProfileData/MemProf.h"
 #include "llvm/ProfileData/MemProfReader.h"
+#include "llvm/ProfileData/MemProfSummaryBuilder.h"
 #include "llvm/ProfileData/MemProfYAML.h"
 #include "llvm/ProfileData/ProfileCommon.h"
 #include "llvm/ProfileData/SampleProfReader.h"
@@ -29,6 +31,7 @@
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Discriminator.h"
 #include "llvm/Support/Errc.h"
+#include "llvm/Support/Error.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/Format.h"
 #include "llvm/Support/FormattedStream.h"
@@ -42,6 +45,7 @@
 #include "llvm/Support/VirtualFileSystem.h"
 #include "llvm/Support/WithColor.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/Object/ObjectFile.h"
 #include <algorithm>
 #include <cmath>
 #include <optional>
@@ -651,9 +655,7 @@ struct WriterContext {
   std::mutex &ErrLock;
   SmallSet<instrprof_error, 4> &WriterErrorCodes;
 
-  WriterContext(bool IsSparse, std::mutex &ErrLock,
-                SmallSet<instrprof_error, 4> &WriterErrorCodes,
-                uint64_t ReservoirSize = 0, uint64_t MaxTraceLength = 0)
+  WriterContext(bool IsSparse, std::mutex &ErrLock, SmallSet<instrprof_error, 4> &WriterErrorCodes, uint64_t ReservoirSize = 0, uint64_t MaxTraceLength = 0)
       : Writer(IsSparse, ReservoirSize, MaxTraceLength, DoWritePrevVersion,
                MemProfVersionRequested, MemProfFullSchema,
                MemprofGenerateRandomHotness, MemprofGenerateRandomHotnessSeed),
@@ -688,6 +690,26 @@ static void overlapInput(const std::string &BaseFilename,
   }
 }
 
+//ANDRES FUNCTION
+Expected<std::string> getArchitectureFromExecutable(StringRef ExecutablePath){
+  ErrorOr<std::unique_ptr<MemoryBuffer>> BufferOrError = MemoryBuffer::getFile(ExecutablePath);
+  if(!BufferOrError){
+    return createStringError(BufferOrError.getError(), "Failed to load input file");
+  }
+
+  Expected<std::unique_ptr<object::ObjectFile>> ObjectOrError = object::ObjectFile::createObjectFile(BufferOrError.get()->getMemBufferRef());
+  if(!ObjectOrError){
+    return ObjectOrError.takeError();
+  }
+
+  std::unique_ptr<llvm::object::ObjectFile> &Object = ObjectOrError.get();
+
+  StringRef ArchStr = Object->getArch() != Triple::UnknownArch ? Triple::getArchTypeName(Object->getArch()) : "unknown";
+
+  return ArchStr.str();
+}
+//ANDRES FUNCTION
+
 /// Load an input into a writer context.
 static void
 loadInput(const WeightedFile &Input, SymbolRemapper *Remapper,
@@ -701,11 +723,35 @@ loadInput(const WeightedFile &Input, SymbolRemapper *Remapper,
   // invalid outside of this packaged task.
   std::string Filename = Input.Filename;
 
+  //ANDRES CODE
+  std::string ExecutableName;
+  std::string ProfileFile = Input.Filename;
+  std::string Architecture = "";
+
+  StringRef FilenameRef = Filename;
+  if(FilenameRef.contains(':')){
+    StringRef ExeRef, ProfRef;
+    std::tie(ExeRef, ProfRef) = FilenameRef.split(':');
+    if(!ExeRef.empty() && !ProfRef.empty()){
+      ExecutableName = ExeRef.str();
+      ProfileFile = ProfRef.str();
+    }
+    Expected<std::string> ArchOrError = getArchitectureFromExecutable(ExeRef);
+    if(ArchOrError){
+      Architecture = std::move(ArchOrError.get());
+    }else{
+      consumeError(ArchOrError.takeError());
+      Architecture = "unknown";
+    }
+  }
+  //ANDRES CODE
+
+
   using ::llvm::memprof::RawMemProfReader;
-  if (RawMemProfReader::hasFormat(Input.Filename)) {
-    auto ReaderOrErr = RawMemProfReader::create(Input.Filename, ProfiledBinary);
+  if (RawMemProfReader::hasFormat(ProfileFile)) {
+    auto ReaderOrErr = RawMemProfReader::create(ProfileFile, ProfiledBinary);
     if (!ReaderOrErr) {
-      exitWithError(ReaderOrErr.takeError(), Input.Filename);
+      exitWithError(ReaderOrErr.takeError(), ProfileFile);
     }
     std::unique_ptr<RawMemProfReader> Reader = std::move(ReaderOrErr.get());
     // Check if the profile types can be merged, e.g. clang frontend profiles
@@ -756,6 +802,8 @@ loadInput(const WeightedFile &Input, SymbolRemapper *Remapper,
 
     auto MemProfData = Reader->takeMemProfData();
 
+    auto DataAccessProfData = Reader->takeDataAccessProfData();
+
     // Check for the empty input in case the YAML file is invalid.
     if (MemProfData.Records.empty()) {
       WC->Errors.emplace_back(
@@ -764,6 +812,7 @@ loadInput(const WeightedFile &Input, SymbolRemapper *Remapper,
     }
 
     WC->Writer.addMemProfData(std::move(MemProfData), MemProfError);
+    WC->Writer.addDataAccessProfData(std::move(DataAccessProfData));
     return;
   }
 
@@ -786,8 +835,8 @@ loadInput(const WeightedFile &Input, SymbolRemapper *Remapper,
   const ProfCorrelatorKind CorrelatorKind = BIDFetcherCorrelatorKind
                                                 ? *BIDFetcherCorrelatorKind
                                                 : ProfCorrelatorKind::NONE;
-  auto ReaderOrErr = InstrProfReader::create(Input.Filename, *FS, Correlator,
-                                             BIDFetcher, CorrelatorKind, Warn);
+  auto ReaderOrErr = InstrProfReader::create(ProfileFile /*ANDRES changed from Input.Filename to ProfileFile*/, *FS, Correlator, //THIS IS THE IMPORTANT LINE!!!!
+                                             BIDFetcher, CorrelatorKind, Warn, Architecture /*ANDRES added this parameter*/);
   if (Error E = ReaderOrErr.takeError()) {
     // Skip the empty profiles by returning silently.
     auto [ErrCode, Msg] = InstrProfError::take(std::move(E));
@@ -1713,6 +1762,28 @@ static void addWeightedInput(WeightedFileVector &WNI, const WeightedFile &WF) {
     return;
   }
 
+  //ANDRES ADDED CODE UPDATED CODE TO HANDLE ARCH SPECIFIC EXECUTABLE
+  StringRef ExecutableName, ProfileFile;
+  if(Filename.contains(':')){
+    std::tie(ExecutableName, ProfileFile) = Filename.split(':');
+
+
+    if(!ExecutableName.empty() && !ProfileFile.empty()){
+      llvm::sys::fs::file_status Status;
+      llvm::sys::fs::status(ProfileFile, Status);
+      if(!llvm::sys::fs::exists(Status)){
+        exitWithErrorCode(make_error_code(errc::no_such_file_or_directory),ProfileFile);
+      }
+      if(llvm::sys::fs::is_regular_file(Status)){
+        WNI.push_back({std::string(Filename), Weight});
+        return;
+      }
+
+      Filename = ProfileFile;
+    }
+  }
+  //ANDRES ADDED CODE
+
   llvm::sys::fs::file_status Status;
   llvm::sys::fs::status(Filename, Status);
   if (!llvm::sys::fs::exists(Status))
@@ -1760,8 +1831,9 @@ static void parseInputFilenamesFile(MemoryBuffer *Buffer,
 
 static int merge_main(StringRef ProgName) {
   WeightedFileVector WeightedInputs;
-  for (StringRef Filename : InputFilenames)
+  for (StringRef Filename : InputFilenames){
     addWeightedInput(WeightedInputs, {std::string(Filename), 1});
+  }
   for (StringRef WeightedFilename : WeightedInputFilenames)
     addWeightedInput(WeightedInputs, parseWeightedFile(WeightedFilename));
 
@@ -3308,6 +3380,18 @@ static int showMemProfProfile(ShowFormat SFormat, raw_fd_ostream &OS) {
 
   auto Reader = std::move(ReaderOrErr.get());
   memprof::AllMemProfData Data = Reader->getAllMemProfData();
+
+  // For v4 and above the summary is serialized in the indexed profile, and can
+  // be accessed from the reader. Earlier versions build the summary below.
+  // The summary is emitted as YAML comments at the start of the output.
+  if (auto *MemProfSum = Reader->getMemProfSummary()) {
+    MemProfSum->printSummaryYaml(OS);
+  } else {
+    memprof::MemProfSummaryBuilder MemProfSumBuilder;
+    for (auto &Pair : Data.HeapProfileRecords)
+      MemProfSumBuilder.addRecord(Pair.Record);
+    MemProfSumBuilder.getSummary()->printSummaryYaml(OS);
+  }
   // Construct yaml::Output with the maximum column width of 80 so that each
   // Frame fits in one line.
   yaml::Output Yout(OS, nullptr, 80);
