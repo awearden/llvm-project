@@ -880,7 +880,7 @@ define <2 x i32> @shl_splat_constant0(<2 x i32> %x) {
 
 define <2 x i32> @shl_splat_constant1(<2 x i32> %x) {
 ; CHECK-LABEL: @shl_splat_constant1(
-; CHECK-NEXT:    [[TMP1:%.*]] = shl <2 x i32> [[X:%.*]], <i32 5, i32 0>
+; CHECK-NEXT:    [[TMP1:%.*]] = shl <2 x i32> [[X:%.*]], <i32 5, i32 poison>
 ; CHECK-NEXT:    [[R:%.*]] = shufflevector <2 x i32> [[TMP1]], <2 x i32> poison, <2 x i32> zeroinitializer
 ; CHECK-NEXT:    ret <2 x i32> [[R]]
 ;
@@ -902,7 +902,7 @@ define <2 x i32> @ashr_splat_constant0(<2 x i32> %x) {
 
 define <2 x i32> @ashr_splat_constant1(<2 x i32> %x) {
 ; CHECK-LABEL: @ashr_splat_constant1(
-; CHECK-NEXT:    [[TMP1:%.*]] = ashr <2 x i32> [[X:%.*]], <i32 5, i32 0>
+; CHECK-NEXT:    [[TMP1:%.*]] = ashr <2 x i32> [[X:%.*]], <i32 5, i32 poison>
 ; CHECK-NEXT:    [[R:%.*]] = shufflevector <2 x i32> [[TMP1]], <2 x i32> poison, <2 x i32> zeroinitializer
 ; CHECK-NEXT:    ret <2 x i32> [[R]]
 ;
@@ -924,7 +924,7 @@ define <2 x i32> @lshr_splat_constant0(<2 x i32> %x) {
 
 define <2 x i32> @lshr_splat_constant1(<2 x i32> %x) {
 ; CHECK-LABEL: @lshr_splat_constant1(
-; CHECK-NEXT:    [[TMP1:%.*]] = lshr <2 x i32> [[X:%.*]], <i32 5, i32 0>
+; CHECK-NEXT:    [[TMP1:%.*]] = lshr <2 x i32> [[X:%.*]], <i32 5, i32 poison>
 ; CHECK-NEXT:    [[R:%.*]] = shufflevector <2 x i32> [[TMP1]], <2 x i32> poison, <2 x i32> zeroinitializer
 ; CHECK-NEXT:    ret <2 x i32> [[R]]
 ;
@@ -1161,7 +1161,7 @@ entry:
 define <4 x i16> @shl_constant_mask_undef(<4 x i16> %in) {
 ; CHECK-LABEL: @shl_constant_mask_undef(
 ; CHECK-NEXT:  entry:
-; CHECK-NEXT:    [[TMP0:%.*]] = shl <4 x i16> [[IN:%.*]], <i16 10, i16 0, i16 0, i16 0>
+; CHECK-NEXT:    [[TMP0:%.*]] = shl <4 x i16> [[IN:%.*]], <i16 10, i16 0, i16 poison, i16 poison>
 ; CHECK-NEXT:    [[SHL:%.*]] = shufflevector <4 x i16> [[TMP0]], <4 x i16> poison, <4 x i32> <i32 0, i32 poison, i32 1, i32 1>
 ; CHECK-NEXT:    ret <4 x i16> [[SHL]]
 ;
@@ -1278,9 +1278,9 @@ define <2 x float> @fsub_splat_constant1(<2 x float> %x) {
 
 define <2 x float> @fneg(<2 x float> %x) {
 ; CHECK-LABEL: @fneg(
-; CHECK-NEXT:    [[TMP1:%.*]] = shufflevector <2 x float> [[X:%.*]], <2 x float> poison, <2 x i32> zeroinitializer
-; CHECK-NEXT:    [[R:%.*]] = fneg <2 x float> [[TMP1]]
-; CHECK-NEXT:    ret <2 x float> [[R]]
+; CHECK-NEXT:    [[R:%.*]] = fneg <2 x float> [[TMP1:%.*]]
+; CHECK-NEXT:    [[R1:%.*]] = shufflevector <2 x float> [[R]], <2 x float> poison, <2 x i32> zeroinitializer
+; CHECK-NEXT:    ret <2 x float> [[R1]]
 ;
   %splat = shufflevector <2 x float> %x, <2 x float> poison, <2 x i32> zeroinitializer
   %r = fsub <2 x float> <float -0.0, float -0.0>, %splat

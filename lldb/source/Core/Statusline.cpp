@@ -24,10 +24,8 @@
 #define ANSI_SAVE_CURSOR ESCAPE "7"
 #define ANSI_RESTORE_CURSOR ESCAPE "8"
 #define ANSI_CLEAR_BELOW ESCAPE "[J"
-#define ANSI_CURSOR_DOWN ESCAPE "[B"
-#define ANSI_CLEAR_LINE ESCAPE "[2K"
-#define ANSI_SET_SCROLL_ROWS ESCAPE "[0;%ur"
-#define ANSI_TO_START_OF_ROW ESCAPE "[%u;0f"
+#define ANSI_SET_SCROLL_ROWS ESCAPE "[1;%ur"
+#define ANSI_TO_START_OF_ROW ESCAPE "[%u;1f"
 #define ANSI_REVERSE_VIDEO ESCAPE "[7m"
 #define ANSI_UP_ROWS ESCAPE "[%dA"
 
@@ -105,20 +103,23 @@ void Statusline::UpdateScrollWindow(ScrollWindowMode mode) {
       (mode == DisableStatusline) ? m_terminal_height : m_terminal_height - 1;
 
   LockedStreamFile locked_stream = stream_sp->Lock();
+
+  if (mode == EnableStatusline) {
+    // Move everything on the screen up.
+    locked_stream << '\n';
+    locked_stream.Printf(ANSI_UP_ROWS, 1);
+  }
+
   locked_stream << ANSI_SAVE_CURSOR;
   locked_stream.Printf(ANSI_SET_SCROLL_ROWS, scroll_height);
   locked_stream << ANSI_RESTORE_CURSOR;
-  switch (mode) {
-  case EnableStatusline:
-    // Move everything on the screen up.
-    locked_stream.Printf(ANSI_UP_ROWS, 1);
-    locked_stream << '\n';
-    break;
-  case DisableStatusline:
+
+  if (mode == DisableStatusline) {
     // Clear the screen below to hide the old statusline.
     locked_stream << ANSI_CLEAR_BELOW;
-    break;
   }
+
+  m_debugger.RefreshIOHandler();
 }
 
 void Statusline::Redraw(bool update) {
@@ -146,9 +147,9 @@ void Statusline::Redraw(bool update) {
   }
 
   StreamString stream;
-  if (auto *format = m_debugger.GetStatuslineFormat())
-    FormatEntity::Format(*format, stream, &symbol_ctx, &exe_ctx, nullptr,
-                         nullptr, false, false);
+  FormatEntity::Entry format = m_debugger.GetStatuslineFormat();
+  FormatEntity::Format(format, stream, &symbol_ctx, &exe_ctx, nullptr, nullptr,
+                       false, false);
 
-  Draw(std::string(stream.GetString()));
+  Draw(stream.GetString().str());
 }
