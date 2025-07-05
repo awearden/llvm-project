@@ -40,6 +40,7 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <list>
 #include <memory>
@@ -643,7 +644,10 @@ public:
 
     // Insert into NameTab so that MD5NameMap (a vector that will be sorted)
     // won't have duplicated entries in the first place.
-    auto Ins = NameTab.insert(SymbolName);
+    uint64_t HashValue = IndexedInstrProf::ComputeHash(SymbolName);
+    printf("Hash Value for %.*s: %" PRIu64 "\n", static_cast<int>(SymbolName.size()), SymbolName.data(), HashValue);
+    auto Ins = NameTab.insert(FuncName);
+    printf("mapped value for %" PRIu64 " hash: %.*s\n", HashValue, static_cast<int>(Ins.first->getKey().size()), Ins.first->getKey().data());
     if (Ins.second) {
       MD5NameMap.push_back(std::make_pair(
           IndexedInstrProf::ComputeHash(SymbolName), Ins.first->getKey()));

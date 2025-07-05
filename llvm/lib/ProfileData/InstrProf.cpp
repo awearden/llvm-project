@@ -555,7 +555,6 @@ Error InstrProfSymtab::addVTableWithName(GlobalVariable &VTable,
   auto NameToGUIDMap = [&](StringRef Name) -> Error {
     if (Error E = addSymbolName(Name))
       return E;
-
     bool Inserted = true;
     std::tie(std::ignore, Inserted) = MD5VTableMap.try_emplace(
         GlobalValue::getGUIDAssumingExternalLinkage(Name), &VTable);
@@ -607,10 +606,18 @@ Error readAndDecodeStrings(StringRef NameStrings,
     SmallVector<StringRef, 0> Names;
     StringRef ArchRef(Architecture); 
     NameStrings.split(Names, getInstrProfNameSeparator());
-    for (StringRef &Name : Names)
-      if (Error E = NameCallback(Name.str()+ ":" + ArchRef.str()))
-        return E;
-
+    printf("=====================READER DATA====================");
+    for (StringRef &Name : Names){
+      std::string ConcHashString = Name.str() + ":" + ArchRef.str();
+      printf("The string %s will get hashed and mapped to %s\n", ConcHashString.c_str(), Name.str().c_str());
+      if(ArchRef.empty()){
+        if (Error E = NameCallback(Name))
+          return E;
+      }else{
+        if (Error E = NameCallback(Name.str() + ":" + ArchRef.str()))
+          return E;
+      }
+    }
     while (P < EndP && *P == 0)
       P++;
   }
@@ -653,7 +660,6 @@ Error readAndDecodeStrings(StringRef NameStrings,
     for (StringRef &Name : Names)
       if (Error E = NameCallback(Name))
         return E;
-
     while (P < EndP && *P == 0)
       P++;
   }
