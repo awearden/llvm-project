@@ -320,6 +320,8 @@ std::string getPGOFuncName(StringRef Name, GlobalValue::LinkageTypes Linkage,
     else
       NewName = NewName.insert(0, FileName.str() + ":");
   }
+
+  
   return NewName;
 }
 
@@ -606,7 +608,6 @@ Error readAndDecodeStrings(StringRef NameStrings,
     SmallVector<StringRef, 0> Names;
     StringRef ArchRef(Architecture); 
     NameStrings.split(Names, getInstrProfNameSeparator());
-    printf("=====================READER DATA====================");
     for (StringRef &Name : Names){
       std::string ConcHashString = Name.str() + ":" + ArchRef.str();
       printf("The string %s will get hashed and mapped to %s\n", ConcHashString.c_str(), Name.str().c_str());

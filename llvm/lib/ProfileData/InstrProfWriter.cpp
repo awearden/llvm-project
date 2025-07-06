@@ -153,11 +153,11 @@ void InstrProfWriter::setValueProfDataEndianness(llvm::endianness Endianness) {
 
 void InstrProfWriter::setOutputSparse(bool Sparse) { this->Sparse = Sparse; }
 
-void InstrProfWriter::addRecord(NamedInstrProfRecord &&I, uint64_t Weight,
+void InstrProfWriter::addRecord(NamedInstrProfRecord &&I, uint64_t Weight, const std::string &Architecture,
                                 function_ref<void(Error)> Warn) {
   auto Name = I.Name;
   auto Hash = I.Hash;
-  addRecord(Name, Hash, std::move(I), Weight, Warn);
+  addRecord(Name, Hash, std::move(I), Weight, Warn, Architecture);
 }
 
 void InstrProfWriter::overlapRecord(NamedInstrProfRecord &&Other,
@@ -197,6 +197,34 @@ void InstrProfWriter::addRecord(StringRef Name, uint64_t Hash,
   auto &ProfileDataMap = FunctionData[Name];
 
   auto [Where, NewFunc] = ProfileDataMap.try_emplace(Hash);
+  InstrProfRecord &Dest = Where->second;
+
+  auto MapWarn = [&](instrprof_error E) {
+    Warn(make_error<InstrProfError>(E));
+  };
+
+  if (NewFunc) {
+    // We've never seen a function with this name and hash, add it.
+    Dest = std::move(I);
+    if (Weight > 1)
+      Dest.scale(Weight, 1, MapWarn);
+  } else {
+    // We're updating a function we've seen before.
+    Dest.merge(I, Weight, MapWarn);
+  }
+
+  Dest.sortValueData();
+}
+
+void InstrProfWriter::addRecord(StringRef Name, uint64_t Hash,
+                                InstrProfRecord &&I, uint64_t Weight,
+                                function_ref<void(Error)> Warn, const std::string &Architecture) {
+  auto &ProfileDataMap = FunctionData[Name];
+  std::string HashStr = std::to_string(Hash) + ":" + Architecture;
+  llvm::StringRef HashRef(HashStr);
+  uint64_t NewHash = IndexedInstrProf::ComputeHash(HashRef);
+
+  auto [Where, NewFunc] = ProfileDataMap.try_emplace(NewHash);
   InstrProfRecord &Dest = Where->second;
 
   auto MapWarn = [&](instrprof_error E) {

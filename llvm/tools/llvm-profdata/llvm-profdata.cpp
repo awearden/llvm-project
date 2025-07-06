@@ -862,7 +862,7 @@ loadInput(const WeightedFile &Input, SymbolRemapper *Remapper,
       I.Name = (*Remapper)(I.Name);
     const StringRef FuncName = I.Name;
     bool Reported = false;
-    WC->Writer.addRecord(std::move(I), Input.Weight, [&](Error E) {
+    WC->Writer.addRecord(std::move(I), Input.Weight, Architecture, [&](Error E) {
       if (Reported) {
         consumeError(std::move(E));
         return;

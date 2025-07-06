@@ -114,6 +114,11 @@ public:
   /// summed. Optionally scale counts by \p Weight.
   LLVM_ABI void addRecord(NamedInstrProfRecord &&I, uint64_t Weight,
                           function_ref<void(Error)> Warn);
+  LLVM_ABI void addRecord(StringRef Name, uint64_t Hash,
+                                InstrProfRecord &&I, uint64_t Weight,
+                                function_ref<void(Error)> Warn, const std::string &Architecture);
+  void addRecord(NamedInstrProfRecord &&I, uint64_t Weight, const std::string &Architecture,
+                                function_ref<void(Error)> Warn);
   void addRecord(NamedInstrProfRecord &&I, function_ref<void(Error)> Warn) {
     addRecord(std::move(I), 1, Warn);
   }
