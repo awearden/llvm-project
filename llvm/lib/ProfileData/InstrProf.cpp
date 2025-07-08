@@ -615,7 +615,7 @@ Error readAndDecodeStrings(StringRef NameStrings,
         if (Error E = NameCallback(Name))
           return E;
       }else{
-        if (Error E = NameCallback(Name.str() + ":" + ArchRef.str()))
+        if (Error E = NameCallback(Name.str() + "#" + ArchRef.str()))
           return E;
       }
     }
