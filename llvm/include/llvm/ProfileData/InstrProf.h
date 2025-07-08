@@ -770,6 +770,7 @@ StringRef InstrProfSymtab::getFuncOrVarName(uint64_t MD5Hash) {
   auto Result = llvm::lower_bound(MD5NameMap, MD5Hash,
                                   [](const std::pair<uint64_t, StringRef> &LHS,
                                      uint64_t RHS) { return LHS.first < RHS; });
+  llvm::errs() << Result->second << ": " << "Result->first: " << Result->first << " vs. MD5hash: " << MD5Hash << "\n";
   if (Result != MD5NameMap.end() && Result->first == MD5Hash)
     return Result->second;
   return StringRef();
