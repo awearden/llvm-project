@@ -876,6 +876,10 @@ public:
          const Twine &RemappingPath = "");
 
   static Expected<std::unique_ptr<IndexedInstrProfReader>>
+  create(const Twine &Path, vfs::FileSystem &FS,
+        const std::string &Arch, const Twine &RemappingPath = "");
+
+  static Expected<std::unique_ptr<IndexedInstrProfReader>>
   create(std::unique_ptr<MemoryBuffer> Buffer,
          std::unique_ptr<MemoryBuffer> RemappingBuffer = nullptr);
 

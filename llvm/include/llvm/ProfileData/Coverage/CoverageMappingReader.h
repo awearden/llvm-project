@@ -39,6 +39,12 @@ struct CoverageMappingRecord {
   ArrayRef<StringRef> Filenames;
   ArrayRef<CounterExpression> Expressions;
   ArrayRef<CounterMappingRegion> MappingRegions;
+  StringRef Arch;
+
+  const StringRef &getArchitecture() const { return Arch; }
+  void setArchitecture(StringRef NewArch){
+    Arch = StringRef(NewArch);
+  }
 };
 
 /// A file format agnostic iterator over coverage mapping data.
@@ -191,6 +197,7 @@ private:
   std::vector<StringRef> FunctionsFilenames;
   std::vector<CounterExpression> Expressions;
   std::vector<CounterMappingRegion> MappingRegions;
+  StringRef Arch;
 
   // Used to tie the lifetimes of coverage function records to the lifetime of
   // this BinaryCoverageReader instance. Needed to support the format change in
@@ -223,7 +230,7 @@ public:
       StringRef Coverage, FuncRecordsStorage &&FuncRecords,
       CoverageMapCopyStorage &&CoverageMap,
       std::unique_ptr<InstrProfSymtab> ProfileNamesPtr, uint8_t BytesInAddress,
-      llvm::endianness Endian, StringRef CompilationDir = "");
+      llvm::endianness Endian, StringRef CompilationDir = "", StringRef Arch = "");
 
   Error readNextRecord(CoverageMappingRecord &Record) override;
 };

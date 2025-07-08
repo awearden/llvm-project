@@ -993,6 +993,7 @@ class CoverageMapping {
   std::vector<FunctionRecord> Functions;
   DenseMap<size_t, SmallVector<unsigned, 0>> FilenameHash2RecordIndices;
   std::vector<std::pair<std::string, uint64_t>> FuncHashMismatches;
+  StringRef Arch;
 
   std::optional<bool> SingleByteCoverage;
 
@@ -1000,10 +1001,16 @@ class CoverageMapping {
 
   // Load coverage records from readers.
   static Error loadFromReaders(
-      ArrayRef<std::unique_ptr<CoverageMappingReader>> CoverageReaders,
-      std::optional<std::reference_wrapper<IndexedInstrProfReader>>
-          &ProfileReader,
-      CoverageMapping &Coverage);
+    ArrayRef<std::unique_ptr<CoverageMappingReader>> CoverageReaders,
+    std::optional<std::reference_wrapper<IndexedInstrProfReader>>
+        &ProfileReader,
+    CoverageMapping &Coverage, StringRef Arch);
+  
+  static Error loadFromReaders(
+    ArrayRef<std::unique_ptr<CoverageMappingReader>> CoverageReaders,
+    std::optional<std::reference_wrapper<IndexedInstrProfReader>>
+        &ProfileReader,
+    CoverageMapping &Coverage);
 
   // Load coverage records from file.
   static Error
@@ -1018,6 +1025,8 @@ class CoverageMapping {
       const CoverageMappingRecord &Record,
       const std::optional<std::reference_wrapper<IndexedInstrProfReader>>
           &ProfileReader);
+  
+  Error loadFunctionRecord(const CoverageMappingRecord &Record, const std::optional<std::reference_wrapper<IndexedInstrProfReader>> &ProfileReader, const std::string &Arch);
 
   /// Look up the indices for function records which are at least partially
   /// defined in the specified file. This is guaranteed to return a superset of
@@ -1027,6 +1036,13 @@ class CoverageMapping {
   getImpreciseRecordIndicesForFilename(StringRef Filename) const;
 
 public:
+
+  const StringRef &getArchitecture() const { return Arch; }
+
+  void setArchitecture(StringRef NewArch){
+    Arch = StringRef(NewArch);
+  }
+
   CoverageMapping(const CoverageMapping &) = delete;
   CoverageMapping &operator=(const CoverageMapping &) = delete;
 
@@ -1234,8 +1250,9 @@ uint64_t getFuncNameRef(const FuncRecordTy *Record) {
 /// a hash.
 template <class FuncRecordTy, llvm::endianness Endian>
 Error getFuncNameViaRef(const FuncRecordTy *Record,
-                        InstrProfSymtab &ProfileNames, StringRef &FuncName) {
+                        InstrProfSymtab &ProfileNames, StringRef &FuncName, StringRef Arch = "") {
   uint64_t NameRef = getFuncNameRef<FuncRecordTy, Endian>(Record);
+  ProfileNames.setArchitecture(Arch.str());
   FuncName = ProfileNames.getFuncOrVarName(NameRef);
   return Error::success();
 }
@@ -1285,7 +1302,7 @@ struct CovMapFunctionRecordV1 {
 
   /// Return the PGO name of the function.
   template <llvm::endianness Endian>
-  Error getFuncName(InstrProfSymtab &ProfileNames, StringRef &FuncName) const {
+  Error getFuncName(InstrProfSymtab &ProfileNames, StringRef &FuncName, StringRef Arch = "") const {
     IntPtrT NameRef = getFuncNameRef<Endian>();
     uint32_t NameS = support::endian::byte_swap<uint32_t, Endian>(NameSize);
     FuncName = ProfileNames.getFuncName(NameRef, NameS);
@@ -1334,7 +1351,7 @@ struct CovMapFunctionRecordV2 {
   }
 
   template <llvm::endianness Endian>
-  Error getFuncName(InstrProfSymtab &ProfileNames, StringRef &FuncName) const {
+  Error getFuncName(InstrProfSymtab &ProfileNames, StringRef &FuncName, StringRef Arch = "") const {
     return accessors::getFuncNameViaRef<ThisT, Endian>(this, ProfileNames,
                                                        FuncName);
   }
@@ -1378,9 +1395,9 @@ struct CovMapFunctionRecordV3 {
   }
 
   template <llvm::endianness Endian>
-  Error getFuncName(InstrProfSymtab &ProfileNames, StringRef &FuncName) const {
+  Error getFuncName(InstrProfSymtab &ProfileNames, StringRef &FuncName, StringRef Arch = "") const {
     return accessors::getFuncNameViaRef<ThisT, Endian>(this, ProfileNames,
-                                                       FuncName);
+                                                       FuncName, Arch);
   }
 
   /// Get the filename set reference.

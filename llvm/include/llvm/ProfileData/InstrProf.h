@@ -636,7 +636,7 @@ public:
   // Map the MD5 of the symbol name to the name.
   Error addSymbolName(StringRef SymbolName) {
     StringRef FuncName;
-    StringRef ArchName;
+    StringRef ArchName = "";
     std::tie(FuncName, ArchName) = SymbolName.split(":");
     if (SymbolName.empty())
       return make_error<InstrProfError>(instrprof_error::malformed,
@@ -644,14 +644,15 @@ public:
 
     // Insert into NameTab so that MD5NameMap (a vector that will be sorted)
     // won't have duplicated entries in the first place.
-    
     uint64_t HashValue = IndexedInstrProf::ComputeHash(FuncName);
-    std::string HashStr = std::to_string(HashValue);
-    std::string CombinedStr = HashStr + ":" + ArchName.str();
-    llvm::StringRef HashRef(CombinedStr);
-    HashValue = IndexedInstrProf::ComputeHash(HashRef);
-
-    printf("Hash Value for %.*s: %" PRIu64 "\n", static_cast<int>(SymbolName.size()), SymbolName.data(), HashValue);
+    llvm::StringRef HashRef(FuncName);
+    if(!ArchName.empty()){
+      std::string HashStr = std::to_string(HashValue);
+      std::string CombinedStr = HashStr + ":" + ArchName.str();
+      HashRef = CombinedStr;
+      HashValue = IndexedInstrProf::ComputeHash(HashRef);
+    }
+    printf("Hash Value for %.*s %" PRIu64 "\n", static_cast<int>(SymbolName.size()), SymbolName.data(), HashValue);
     auto Ins = NameTab.insert(FuncName);
     printf("mapped value for %" PRIu64 " hash: %.*s\n", HashValue, static_cast<int>(Ins.first->getKey().size()), Ins.first->getKey().data());
     if (Ins.second) {
@@ -786,13 +787,14 @@ StringRef InstrProfSymtab::getFuncOrVarNameIfDefined(uint64_t MD5Hash) {
 StringRef InstrProfSymtab::getFuncOrVarName(uint64_t MD5Hash) {
   finalizeSymtab();
   std::string TempMD5HashStr = std::to_string(MD5Hash);
-  std::string CombinedHashStr = TempMD5HashStr + ":" + Architecture;
-  llvm::StringRef CombinedHashRef(CombinedHashStr);
-  uint64_t NewMD5Hash = IndexedInstrProf::ComputeHash(CombinedHashRef);
-  auto Result = llvm::lower_bound(MD5NameMap, NewMD5Hash,
-                                  [](const std::pair<uint64_t, StringRef> &LHS,
-                                     uint64_t RHS) { return LHS.first < RHS; });
-  if (Result != MD5NameMap.end() && Result->first == NewMD5Hash)
+  if(!Architecture.empty()){
+    std::string CombinedHashStr = TempMD5HashStr + ":" + Architecture;
+    llvm::StringRef CombinedHashRef(CombinedHashStr);
+    MD5Hash = IndexedInstrProf::ComputeHash(CombinedHashRef);
+  }
+  auto Result = llvm::lower_bound(MD5NameMap, MD5Hash, [](const std::pair<uint64_t, StringRef> &LHS, uint64_t RHS) { return LHS.first < RHS; });
+  llvm::errs() << "Architecture: " << (!Architecture.empty() ? Architecture : "No Specified Architecture") << ": " << Result->second<< ": " << "Result->first: " << Result->first << " vs. MD5hash: " << MD5Hash << "\n";
+  if (Result != MD5NameMap.end() && Result->first == MD5Hash)
     return Result->second;
   return StringRef();
 }

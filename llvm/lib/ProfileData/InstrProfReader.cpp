@@ -227,6 +227,28 @@ IndexedInstrProfReader::create(const Twine &Path, vfs::FileSystem &FS,
 }
 
 Expected<std::unique_ptr<IndexedInstrProfReader>>
+IndexedInstrProfReader::create(const Twine &Path, vfs::FileSystem &FS,
+                               const std::string &Arch, const Twine &RemappingPath) {
+  // Set up the buffer to read.
+  auto BufferOrError = setupMemoryBuffer(Path, FS);
+  if (Error E = BufferOrError.takeError())
+    return std::move(E);
+
+  // Set up the remapping buffer if requested.
+  std::unique_ptr<MemoryBuffer> RemappingBuffer;
+  std::string RemappingPathStr = RemappingPath.str();
+  if (!RemappingPathStr.empty()) {
+    auto RemappingBufferOrError = setupMemoryBuffer(RemappingPathStr, FS);
+    if (Error E = RemappingBufferOrError.takeError())
+      return std::move(E);
+    RemappingBuffer = std::move(RemappingBufferOrError.get());
+  }
+
+  return IndexedInstrProfReader::create(std::move(BufferOrError.get()),
+                                        std::move(RemappingBuffer));
+}
+
+Expected<std::unique_ptr<IndexedInstrProfReader>>
 IndexedInstrProfReader::create(std::unique_ptr<MemoryBuffer> Buffer,
                                std::unique_ptr<MemoryBuffer> RemappingBuffer) {
   // Create the reader.

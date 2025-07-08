@@ -668,7 +668,8 @@ Error readAndDecodeStrings(StringRef NameStrings,
 }
 
 Error InstrProfSymtab::create(StringRef NameStrings) {
-  return readAndDecodeStrings(NameStrings, std::bind(&InstrProfSymtab::addFuncName, this, std::placeholders::_1));
+  const std::string &Architecture = getArchitecture();
+  return readAndDecodeStrings(NameStrings, std::bind(&InstrProfSymtab::addFuncName, this, std::placeholders::_1), Architecture);
 }
 
 Error InstrProfSymtab::create(StringRef FuncNameStrings,
