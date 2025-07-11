@@ -213,7 +213,7 @@ public:
       const object::BuildIDFetcher *BIDFetcher = nullptr,
       const InstrProfCorrelator::ProfCorrelatorKind BIDFetcherCorrelatorKind =
           InstrProfCorrelator::ProfCorrelatorKind::NONE,
-      std::function<void(Error)> Warn = nullptr, const std::string &Architecture = "");
+      std::function<void(Error)> Warn = nullptr, StringRef Architecture = "");
 
   LLVM_ABI static Expected<std::unique_ptr<InstrProfReader>> create(
       std::unique_ptr<MemoryBuffer> Buffer,
@@ -221,11 +221,11 @@ public:
       const object::BuildIDFetcher *BIDFetcher = nullptr,
       const InstrProfCorrelator::ProfCorrelatorKind BIDFetcherCorrelatorKind =
           InstrProfCorrelator::ProfCorrelatorKind::NONE,
-      std::function<void(Error)> Warn = nullptr, const std::string &Architecture = "");
+      std::function<void(Error)> Warn = nullptr, StringRef Architecture = "");
   
-  const std::string &getArchitecture() {return Architecture;}
+  StringRef getArchitecture() {return Architecture;}
 
-  void setArchitecture(const std::string &Arch) {Architecture = Arch;}
+  void setArchitecture(StringRef Arch) {Architecture = Arch;}
   /// \param Weight for raw profiles use this as the temporal profile trace
   ///               weight
   /// \returns a list of temporal profile traces.

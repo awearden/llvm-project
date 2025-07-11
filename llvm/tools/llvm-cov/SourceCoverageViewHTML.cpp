@@ -1062,6 +1062,31 @@ void SourceCoverageViewHTML::renderLineCoverageColumn(
   OS << tag("td", Count, CoverageClass);
 }
 
+void SourceCoverageViewHTML::renderArchLineCoverageColumn(
+    raw_ostream &OS,
+    const LineCoverageStats &Line,
+    std::vector<std::vector<LineCoverageStats>> LineArchStats) {
+  
+  std::string CellContent;
+
+  if (Line.isMapped()) {
+    unsigned LineNo = Line.getLine();
+    for (const auto &ArchStats : LineArchStats[LineNo]) {
+      CellContent += formatBinaryCount(ArchStats.getExecutionCount()) + "/";
+    }
+    if (!CellContent.empty())
+      CellContent.pop_back(); // Remove trailing '/'
+  }
+
+  std::string CoverageClass =
+      (Line.getExecutionCount() > 0)
+          ? "covered-line"
+          : (Line.isMapped() ? "uncovered-line" : "skipped-line");
+
+  OS << tag("td", tag("pre", CellContent), CoverageClass);
+}
+
+
 void SourceCoverageViewHTML::renderLineNumberColumn(raw_ostream &OS,
                                                     unsigned LineNo) {
   std::string LineNoStr = utostr(uint64_t(LineNo));

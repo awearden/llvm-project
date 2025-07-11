@@ -114,7 +114,7 @@ private:
 
   /// Create the main source view of a particular source file.
   std::unique_ptr<SourceCoverageView>
-  createSourceFileView(StringRef SourceFile, const CoverageMapping &Coverage);
+  createSourceFileView(StringRef SourceFile, const CoverageMapping &Coverage, std::vector<StringRef> Arches);
 
   /// Load the coverage mapping data. Return nullptr if an error occurred.
   std::unique_ptr<CoverageMapping> load();
@@ -391,7 +391,7 @@ CodeCoverageTool::createFunctionView(const FunctionRecord &Function,
 
 std::unique_ptr<SourceCoverageView>
 CodeCoverageTool::createSourceFileView(StringRef SourceFile,
-                                       const CoverageMapping &Coverage) {
+                                       const CoverageMapping &Coverage, std::vector<StringRef> Arches) {
   auto SourceBuffer = getSourceFile(SourceFile);
   if (!SourceBuffer)
     return nullptr;
@@ -633,7 +633,7 @@ void CodeCoverageTool::writeSourceFileView(StringRef SourceFile,
                                            CoverageMapping *Coverage,
                                            CoveragePrinter *Printer,
                                            bool ShowFilenames) {
-  auto View = createSourceFileView(SourceFile, *Coverage);
+  auto View = createSourceFileView(SourceFile, *Coverage, CoverageArches);
   if (!View) {
     warning("The file '" + SourceFile + "' isn't covered.");
     return;
@@ -648,7 +648,7 @@ void CodeCoverageTool::writeSourceFileView(StringRef SourceFile,
 
   View->print(*OS.get(), /*Wholefile=*/true,
               /*ShowSourceName=*/ShowFilenames,
-              /*ShowTitle=*/ViewOpts.hasOutputDirectory());
+              /*ShowTitle=*/ViewOpts.hasOutputDirectory(), SourceFile);
   Printer->closeViewFile(std::move(OS));
 }
 

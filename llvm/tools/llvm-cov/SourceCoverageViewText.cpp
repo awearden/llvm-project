@@ -14,6 +14,7 @@
 #include "CoverageReport.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/StringExtras.h"
+#include "llvm/ProfileData/Coverage/CoverageMapping.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/Format.h"
 #include "llvm/Support/Path.h"
@@ -218,9 +219,23 @@ void SourceCoverageViewText::renderLineCoverageColumn(
   }
   std::string C = formatBinaryCount(Line.getExecutionCount());
   OS.indent(LineCoverageColumnWidth - C.size());
-  colored_ostream(OS, raw_ostream::MAGENTA,
-                  Line.hasMultipleRegions() && getOptions().Colors)
-      << C;
+  colored_ostream(OS, raw_ostream::MAGENTA, Line.hasMultipleRegions() && getOptions().Colors) << C;
+  OS << '|';
+}
+
+void SourceCoverageViewText::renderArchLineCoverageColumn(
+    raw_ostream &OS, const LineCoverageStats &Line, std::vector<std::vector<LineCoverageStats>> LineArchStats) {
+  if (!Line.isMapped()) {
+    OS.indent(LineCoverageColumnWidth) << '|';
+    return;
+  }
+  std::string C = "";
+  for(LineCoverageStats Counts : LineArchStats[Line.getLine()]){
+    C += formatBinaryCount(Counts.getExecutionCount()) + "/";
+  }
+  // std::string C = formatBinaryCount(Line.getExecutionCount());
+  OS.indent(LineCoverageColumnWidth - C.size());
+  colored_ostream(OS, raw_ostream::MAGENTA, Line.hasMultipleRegions() && getOptions().Colors) << C;
   OS << '|';
 }
 

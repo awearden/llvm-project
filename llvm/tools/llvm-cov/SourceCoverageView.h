@@ -224,6 +224,9 @@ protected:
   /// Render the line's execution count column.
   virtual void renderLineCoverageColumn(raw_ostream &OS,
                                         const LineCoverageStats &Line) = 0;
+                                
+  virtual void renderArchLineCoverageColumn(raw_ostream &OS, const LineCoverageStats &Line, std::vector<std::vector<LineCoverageStats>> LineArchStats) = 0;
+
 
   /// Render the line number column.
   virtual void renderLineNumberColumn(raw_ostream &OS, unsigned LineNo) = 0;
@@ -319,7 +322,7 @@ public:
   /// Print the code coverage information for a specific portion of a
   /// source file to the output stream.
   void print(raw_ostream &OS, bool WholeFile, bool ShowSourceName,
-             bool ShowTitle, unsigned ViewDepth = 0);
+             bool ShowTitle, unsigned ViewDepth = 0, StringRef CoverageArches = "");
 };
 
 } // namespace llvm

@@ -821,153 +821,156 @@ public:
 
 } // namespace
 
-Error CoverageMapping::loadFunctionRecord(
-    const CoverageMappingRecord &Record,
-    const std::optional<std::reference_wrapper<IndexedInstrProfReader>>
-        &ProfileReader, const std::string &Arch) {
-  StringRef OrigFuncName = Record.FunctionName;
-  if (OrigFuncName.empty())
-    return make_error<CoverageMapError>(coveragemap_error::malformed,
-                                        "record function name is empty");
+// Error CoverageMapping::loadFunctionRecord(
+//     const CoverageMappingRecord &Record,
+//     const std::optional<std::reference_wrapper<IndexedInstrProfReader>>
+//         &ProfileReader, StringRef Arch) {
+//   StringRef OrigFuncName = Record.FunctionName;
+//   if (OrigFuncName.empty())
+//     return make_error<CoverageMapError>(coveragemap_error::malformed,
+//                                         "record function name is empty");
 
-  if (Record.Filenames.empty())
-    OrigFuncName = getFuncNameWithoutPrefix(OrigFuncName);
-  else
-    OrigFuncName = getFuncNameWithoutPrefix(OrigFuncName, Record.Filenames[0]);
+//   if (Record.Filenames.empty())
+//     OrigFuncName = getFuncNameWithoutPrefix(OrigFuncName);
+//   else
+//     OrigFuncName = getFuncNameWithoutPrefix(OrigFuncName, Record.Filenames[0]);
 
-  CounterMappingContext Ctx(Record.Expressions);
+//   CounterMappingContext Ctx(Record.Expressions);
 
-  std::string HashStr = std::to_string(Record.FunctionHash) + ":" + Arch;
-  llvm::StringRef HashRef(HashStr);
-  uint64_t NewHash = IndexedInstrProf::ComputeHash(HashRef);
+//   uint64_t FuncArchHash = Record.FunctionHash;
+//   if(!Arch.empty()){
+//     std::string HashStr = std::to_string(Record.FunctionHash) + ":" + Arch.str();
+//     llvm::StringRef HashRef(HashStr);
+//     FuncArchHash = IndexedInstrProf::ComputeHash(HashRef);
+//   }
 
-  std::vector<uint64_t> Counts;
-  if (ProfileReader) {
-    if (Error E = ProfileReader.value().get().getFunctionCounts(
-            Record.FunctionName, NewHash, Counts)) {
-      instrprof_error IPE = std::get<0>(InstrProfError::take(std::move(E)));
-      if (IPE == instrprof_error::hash_mismatch) {
-        FuncHashMismatches.emplace_back(std::string(Record.FunctionName),
-                                        NewHash);
-        return Error::success();
-      }
-      if (IPE != instrprof_error::unknown_function)
-        return make_error<InstrProfError>(IPE);
-      Counts.assign(getMaxCounterID(Ctx, Record) + 1, 0);
-    }
-  } else {
-    Counts.assign(getMaxCounterID(Ctx, Record) + 1, 0);
-  }
-  Ctx.setCounts(Counts);
+//   std::vector<uint64_t> Counts;
+//   if (ProfileReader) {
+//     if (Error E = ProfileReader.value().get().getFunctionCounts(
+//             Record.FunctionName, FuncArchHash, Counts)) {
+//       instrprof_error IPE = std::get<0>(InstrProfError::take(std::move(E)));
+//       if (IPE == instrprof_error::hash_mismatch) {
+//         FuncHashMismatches.emplace_back(std::string(Record.FunctionName),
+//                                         FuncArchHash);
+//         return Error::success();
+//       }
+//       if (IPE != instrprof_error::unknown_function)
+//         return make_error<InstrProfError>(IPE);
+//       Counts.assign(getMaxCounterID(Ctx, Record) + 1, 0);
+//     }
+//   } else {
+//     Counts.assign(getMaxCounterID(Ctx, Record) + 1, 0);
+//   }
+//   Ctx.setCounts(Counts);
 
-  bool IsVersion11 =
-      ProfileReader && ProfileReader.value().get().getVersion() <
-                           IndexedInstrProf::ProfVersion::Version12;
+//   bool IsVersion11 =
+//       ProfileReader && ProfileReader.value().get().getVersion() <
+//                            IndexedInstrProf::ProfVersion::Version12;
 
-  BitVector Bitmap;
-  if (ProfileReader) {
-    if (Error E = ProfileReader.value().get().getFunctionBitmap(
-            Record.FunctionName, NewHash, Bitmap)) {
-      instrprof_error IPE = std::get<0>(InstrProfError::take(std::move(E)));
-      if (IPE == instrprof_error::hash_mismatch) {
-        FuncHashMismatches.emplace_back(std::string(Record.FunctionName),
-                                        NewHash);
-        return Error::success();
-      }
-      if (IPE != instrprof_error::unknown_function)
-        return make_error<InstrProfError>(IPE);
-      Bitmap = BitVector(getMaxBitmapSize(Record, IsVersion11));
-    }
-  } else {
-    Bitmap = BitVector(getMaxBitmapSize(Record, false));
-  }
-  Ctx.setBitmap(std::move(Bitmap));
+//   BitVector Bitmap;
+//   if (ProfileReader) {
+//     if (Error E = ProfileReader.value().get().getFunctionBitmap(
+//             Record.FunctionName, FuncArchHash, Bitmap)) {
+//       instrprof_error IPE = std::get<0>(InstrProfError::take(std::move(E)));
+//       if (IPE == instrprof_error::hash_mismatch) {
+//         FuncHashMismatches.emplace_back(std::string(Record.FunctionName),
+//                                         FuncArchHash);
+//         return Error::success();
+//       }
+//       if (IPE != instrprof_error::unknown_function)
+//         return make_error<InstrProfError>(IPE);
+//       Bitmap = BitVector(getMaxBitmapSize(Record, IsVersion11));
+//     }
+//   } else {
+//     Bitmap = BitVector(getMaxBitmapSize(Record, false));
+//   }
+//   Ctx.setBitmap(std::move(Bitmap));
 
-  assert(!Record.MappingRegions.empty() && "Function has no regions");
+//   assert(!Record.MappingRegions.empty() && "Function has no regions");
 
-  // This coverage record is a zero region for a function that's unused in
-  // some TU, but used in a different TU. Ignore it. The coverage maps from the
-  // the other TU will either be loaded (providing full region counts) or they
-  // won't (in which case we don't unintuitively report functions as uncovered
-  // when they have non-zero counts in the profile).
-  if (Record.MappingRegions.size() == 1 &&
-      Record.MappingRegions[0].Count.isZero() && Counts[0] > 0)
-    return Error::success();
+//   // This coverage record is a zero region for a function that's unused in
+//   // some TU, but used in a different TU. Ignore it. The coverage maps from the
+//   // the other TU will either be loaded (providing full region counts) or they
+//   // won't (in which case we don't unintuitively report functions as uncovered
+//   // when they have non-zero counts in the profile).
+//   if (Record.MappingRegions.size() == 1 &&
+//       Record.MappingRegions[0].Count.isZero() && Counts[0] > 0)
+//     return Error::success();
 
-  MCDCDecisionRecorder MCDCDecisions;
-  FunctionRecord Function(OrigFuncName, Record.Filenames);
-  for (const auto &Region : Record.MappingRegions) {
-    // MCDCDecisionRegion should be handled first since it overlaps with
-    // others inside.
-    if (Region.Kind == CounterMappingRegion::MCDCDecisionRegion) {
-      MCDCDecisions.registerDecision(Region);
-      continue;
-    }
-    Expected<int64_t> ExecutionCount = Ctx.evaluate(Region.Count);
-    if (auto E = ExecutionCount.takeError()) {
-      consumeError(std::move(E));
-      return Error::success();
-    }
-    Expected<int64_t> AltExecutionCount = Ctx.evaluate(Region.FalseCount);
-    if (auto E = AltExecutionCount.takeError()) {
-      consumeError(std::move(E));
-      return Error::success();
-    }
-    Function.pushRegion(Region, *ExecutionCount, *AltExecutionCount);
+//   MCDCDecisionRecorder MCDCDecisions;
+//   FunctionRecord Function(OrigFuncName, Record.Filenames);
+//   for (const auto &Region : Record.MappingRegions) {
+//     // MCDCDecisionRegion should be handled first since it overlaps with
+//     // others inside.
+//     if (Region.Kind == CounterMappingRegion::MCDCDecisionRegion) {
+//       MCDCDecisions.registerDecision(Region);
+//       continue;
+//     }
+//     Expected<int64_t> ExecutionCount = Ctx.evaluate(Region.Count);
+//     if (auto E = ExecutionCount.takeError()) {
+//       consumeError(std::move(E));
+//       return Error::success();
+//     }
+//     Expected<int64_t> AltExecutionCount = Ctx.evaluate(Region.FalseCount);
+//     if (auto E = AltExecutionCount.takeError()) {
+//       consumeError(std::move(E));
+//       return Error::success();
+//     }
+//     Function.pushRegion(Region, *ExecutionCount, *AltExecutionCount);
 
-    // Record ExpansionRegion.
-    if (Region.Kind == CounterMappingRegion::ExpansionRegion) {
-      MCDCDecisions.recordExpansion(Region);
-      continue;
-    }
+//     // Record ExpansionRegion.
+//     if (Region.Kind == CounterMappingRegion::ExpansionRegion) {
+//       MCDCDecisions.recordExpansion(Region);
+//       continue;
+//     }
 
-    // Do nothing unless MCDCBranchRegion.
-    if (Region.Kind != CounterMappingRegion::MCDCBranchRegion)
-      continue;
+//     // Do nothing unless MCDCBranchRegion.
+//     if (Region.Kind != CounterMappingRegion::MCDCBranchRegion)
+//       continue;
 
-    auto Result = MCDCDecisions.processBranch(Region);
-    if (!Result) // Any Decision doesn't complete.
-      continue;
+//     auto Result = MCDCDecisions.processBranch(Region);
+//     if (!Result) // Any Decision doesn't complete.
+//       continue;
 
-    auto MCDCDecision = Result->first;
-    auto &MCDCBranches = Result->second;
+//     auto MCDCDecision = Result->first;
+//     auto &MCDCBranches = Result->second;
 
-    // Since the bitmap identifies the executed test vectors for an MC/DC
-    // DecisionRegion, all of the information is now available to process.
-    // This is where the bulk of the MC/DC progressing takes place.
-    Expected<MCDCRecord> Record =
-        Ctx.evaluateMCDCRegion(*MCDCDecision, MCDCBranches, IsVersion11);
-    if (auto E = Record.takeError()) {
-      consumeError(std::move(E));
-      return Error::success();
-    }
+//     // Since the bitmap identifies the executed test vectors for an MC/DC
+//     // DecisionRegion, all of the information is now available to process.
+//     // This is where the bulk of the MC/DC progressing takes place.
+//     Expected<MCDCRecord> Record =
+//         Ctx.evaluateMCDCRegion(*MCDCDecision, MCDCBranches, IsVersion11);
+//     if (auto E = Record.takeError()) {
+//       consumeError(std::move(E));
+//       return Error::success();
+//     }
 
-    // Save the MC/DC Record so that it can be visualized later.
-    Function.pushMCDCRecord(std::move(*Record));
-  }
+//     // Save the MC/DC Record so that it can be visualized later.
+//     Function.pushMCDCRecord(std::move(*Record));
+//   }
 
-  // Don't create records for (filenames, function) pairs we've already seen.
-  auto FilenamesHash = hash_combine_range(Record.Filenames);
-  if (!RecordProvenance[FilenamesHash].insert(hash_value(OrigFuncName)).second)
-    return Error::success();
+//   // Don't create records for (filenames, function) pairs we've already seen.
+//   auto FilenamesHash = hash_combine_range(Record.Filenames);
+//   if (!RecordProvenance[FilenamesHash].insert(hash_value(OrigFuncName)).second)
+//     return Error::success();
 
-  Functions.push_back(std::move(Function));
+//   Functions.push_back(std::move(Function));
 
-  // Performance optimization: keep track of the indices of the function records
-  // which correspond to each filename. This can be used to substantially speed
-  // up queries for coverage info in a file.
-  unsigned RecordIndex = Functions.size() - 1;
-  for (StringRef Filename : Record.Filenames) {
-    auto &RecordIndices = FilenameHash2RecordIndices[hash_value(Filename)];
-    // Note that there may be duplicates in the filename set for a function
-    // record, because of e.g. macro expansions in the function in which both
-    // the macro and the function are defined in the same file.
-    if (RecordIndices.empty() || RecordIndices.back() != RecordIndex)
-      RecordIndices.push_back(RecordIndex);
-  }
+//   // Performance optimization: keep track of the indices of the function records
+//   // which correspond to each filename. This can be used to substantially speed
+//   // up queries for coverage info in a file.
+//   unsigned RecordIndex = Functions.size() - 1;
+//   for (StringRef Filename : Record.Filenames) {
+//     auto &RecordIndices = FilenameHash2RecordIndices[hash_value(Filename)];
+//     // Note that there may be duplicates in the filename set for a function
+//     // record, because of e.g. macro expansions in the function in which both
+//     // the macro and the function are defined in the same file.
+//     if (RecordIndices.empty() || RecordIndices.back() != RecordIndex)
+//       RecordIndices.push_back(RecordIndex);
+//   }
 
-  return Error::success();
-}
+//   return Error::success();
+// }
 
 Error CoverageMapping::loadFunctionRecord(
     const CoverageMappingRecord &Record,
@@ -985,18 +988,21 @@ Error CoverageMapping::loadFunctionRecord(
 
   CounterMappingContext Ctx(Record.Expressions);
 
-  std::string HashStr = std::to_string(Record.FunctionHash) + ":" + Arch.str();
-  llvm::StringRef HashRef(HashStr);
-  uint64_t NewHash = IndexedInstrProf::ComputeHash(HashRef);
+  uint64_t FuncArchHash = Record.FunctionHash;
+  if(!Arch.empty()){
+    std::string HashStr = std::to_string(Record.FunctionHash) + ":" + Arch.str();
+    llvm::StringRef HashRef(HashStr);
+    FuncArchHash = IndexedInstrProf::ComputeHash(HashRef);
+  }
 
   std::vector<uint64_t> Counts;
   if (ProfileReader) {
     if (Error E = ProfileReader.value().get().getFunctionCounts(
-            Record.FunctionName, NewHash, Counts)) {
+            Record.FunctionName, FuncArchHash, Counts)) {
       instrprof_error IPE = std::get<0>(InstrProfError::take(std::move(E)));
       if (IPE == instrprof_error::hash_mismatch) {
         FuncHashMismatches.emplace_back(std::string(Record.FunctionName),
-                                        NewHash);
+                                        FuncArchHash);
         return Error::success();
       }
       if (IPE != instrprof_error::unknown_function)
@@ -1015,11 +1021,11 @@ Error CoverageMapping::loadFunctionRecord(
   BitVector Bitmap;
   if (ProfileReader) {
     if (Error E = ProfileReader.value().get().getFunctionBitmap(
-            Record.FunctionName, NewHash, Bitmap)) {
+            Record.FunctionName, FuncArchHash, Bitmap)) {
       instrprof_error IPE = std::get<0>(InstrProfError::take(std::move(E)));
       if (IPE == instrprof_error::hash_mismatch) {
         FuncHashMismatches.emplace_back(std::string(Record.FunctionName),
-                                        NewHash);
+                                        FuncArchHash);
         return Error::success();
       }
       if (IPE != instrprof_error::unknown_function)

@@ -160,7 +160,7 @@ Expected<std::unique_ptr<InstrProfReader>> InstrProfReader::create( //STEP 1
     const object::BuildIDFetcher *BIDFetcher,
     const InstrProfCorrelator::ProfCorrelatorKind BIDFetcherCorrelatorKind,
     std::function<void(Error)> Warn, 
-    const std::string &Architecture) {
+    StringRef Architecture) {
   // Set up the buffer to read.
   auto BufferOrError = setupMemoryBuffer(Path, FS);
   if (Error E = BufferOrError.takeError())
@@ -173,7 +173,7 @@ Expected<std::unique_ptr<InstrProfReader>> InstrProfReader::create(
     std::unique_ptr<MemoryBuffer> Buffer, const InstrProfCorrelator *Correlator,
     const object::BuildIDFetcher *BIDFetcher,
     const InstrProfCorrelator::ProfCorrelatorKind BIDFetcherCorrelatorKind,
-    std::function<void(Error)> Warn, const std::string &Architecture) {
+    std::function<void(Error)> Warn, StringRef Architecture) {
   if (Buffer->getBufferSize() == 0)
     return make_error<InstrProfError>(instrprof_error::empty_raw_profile);
 

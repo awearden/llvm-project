@@ -15,9 +15,11 @@
 #include "SourceCoverageViewText.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/StringExtras.h"
+#include "llvm/ProfileData/Coverage/CoverageMapping.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/LineIterator.h"
 #include "llvm/Support/Path.h"
+#include <vector>
 
 using namespace llvm;
 
@@ -192,7 +194,7 @@ void SourceCoverageView::addInstantiation(
 
 void SourceCoverageView::print(raw_ostream &OS, bool WholeFile,
                                bool ShowSourceName, bool ShowTitle,
-                               unsigned ViewDepth) {
+                               unsigned ViewDepth, StringRef SourceFile) {
   if (ShowTitle)
     renderTitle(OS, "Coverage Report");
 
@@ -222,9 +224,25 @@ void SourceCoverageView::print(raw_ostream &OS, bool WholeFile,
   auto StartSegment = CoverageInfo.begin();
   auto EndSegment = CoverageInfo.end();
   LineCoverageIterator LCI{CoverageInfo, 1};
+  // LineCoverageIterator LCIInit{CoverageInfo, 1};
   LineCoverageIterator LCIEnd = LCI.getEnd();
-
   unsigned FirstLine = StartSegment != EndSegment ? StartSegment->Line : 0;
+  
+  // // Determine the number of lines in the file
+  // unsigned NumLines = 0;
+  // for (line_iterator LI(File, /*SkipBlanks=*/false); !LI.is_at_eof(); ++LI)
+  //   ++NumLines;
+  // // Resize the outer vector to hold one entry per line
+  // std::vector<std::vector<LineCoverageStats>> LineArchStats;
+  // LineArchStats.resize(CoverageArches.size()); // +1 in case line numbers are 1-based
+  // for (line_iterator LI(File, /*SkipBlanks=*/false); !LI.is_at_eof(); ++LI, ++LCIInit) {
+  //   unsigned LineNo = LCIInit->getLine();
+  //   if (LineNo >= LineArchStats.size()){
+  //     LineArchStats.resize(LineNo + 1); // Ensure enough space
+  //   }
+  //   LineArchStats[LineNo].push_back(*LCIInit); // Store the LineCoverageStats
+  // }
+
   for (line_iterator LI(File, /*SkipBlanks=*/false); !LI.is_at_eof();
        ++LI, ++LCI) {
     // If we aren't rendering the whole file, we need to filter out the prologue
@@ -242,6 +260,7 @@ void SourceCoverageView::print(raw_ostream &OS, bool WholeFile,
 
     if (getOptions().ShowLineStats)
       renderLineCoverageColumn(OS, *LCI);
+      // renderArchLineCoverageColumn(OS, *LCI, LineArchStats);
 
     // If there are expansion subviews, we want to highlight the first one.
     unsigned ExpansionColumn = 0;

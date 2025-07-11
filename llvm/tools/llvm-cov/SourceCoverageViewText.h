@@ -85,6 +85,8 @@ class SourceCoverageViewText : public SourceCoverageView {
 
   void renderLineCoverageColumn(raw_ostream &OS,
                                 const LineCoverageStats &Line) override;
+  
+  void renderArchLineCoverageColumn(raw_ostream &OS, const LineCoverageStats &Line, std::vector<std::vector<LineCoverageStats>> LineArchStats) override;
 
   void renderLineNumberColumn(raw_ostream &OS, unsigned LineNo) override;
 
