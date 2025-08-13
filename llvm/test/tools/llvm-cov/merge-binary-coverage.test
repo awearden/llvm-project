@@ -1,0 +1,32 @@
+// RUN: clang -O0 -fprofile-instr-generate -fcoverage-mapping -DTOGGLE %S/Inputs/merge-binary-coverage.c \
+// RUN:       -o %t.toggle
+// RUN: env LLVM_PROFILE_FILE=%t.toggle.profraw 
+// RUN: %t.toggle
+// RUN: cp default.profraw %t.toggle.profraw
+
+//------------------ build & run variant WITHOUT TOGGLE ----------------------//
+// RUN: clang -O0 -fprofile-instr-generate -fcoverage-mapping %S/Inputs/merge-binary-coverage.c \
+// RUN:       -o %t.notoggle
+// RUN: env LLVM_PROFILE_FILE=%t.notoggle.profraw 
+// RUN: cp default.profraw %t.notoggle.profraw
+
+//------------------ merge profiles & show coverage --------------------------//
+// RUN: llvm-profdata merge --object-aware-hashing=%t.notoggle %t.notoggle.profraw\
+// RUN:     --object-aware-hashing=%t.toggle   %t.toggle.profraw \
+// RUN:     -o %t.profdata
+//
+// RUN: llvm-cov show -instr-profile=%t.profdata                     \
+// RUN:       --object=%t.toggle --object=%t.notoggle                \
+// RUN:       --merge-binary-coverage                                \
+// RUN:   | FileCheck %s --match-full-lines
+// CHECK:         1|      2|int main() {
+ // CHECK-NEXT:   2|      2|  int a = 1;
+ // CHECK-NEXT:   3|      2|  int b = 2;
+ // CHECK-NEXT:   4|      2|  int res = 0;
+ // CHECK-NEXT:   5|      2|#if defined(TOGGLE)
+ // CHECK-NEXT:   6|      1|  res = a + b;
+ // CHECK-NEXT:   7|      1|#else
+ // CHECK-NEXT:   8|      1|  res = b - a;
+ // CHECK-NEXT:   9|      1|#endif
+ // CHECK-NEXT:  10|      2|  return 0;
+ // CHECK-NEXT:  11|      2|}
