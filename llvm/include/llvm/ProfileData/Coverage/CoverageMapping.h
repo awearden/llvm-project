@@ -732,11 +732,18 @@ struct FunctionRecord {
   /// The number of times this function was executed.
   uint64_t ExecutionCount = 0;
 
-  FunctionRecord(StringRef Name, ArrayRef<StringRef> Filenames)
-      : Name(Name), Filenames(Filenames.begin(), Filenames.end()) {}
+  FunctionRecord(StringRef Name, ArrayRef<StringRef> Filenames,
+                 StringRef ObjectFilename = "")
+      : Name(Name), Filenames(Filenames.begin(), Filenames.end()){}
 
   FunctionRecord(FunctionRecord &&FR) = default;
   FunctionRecord &operator=(FunctionRecord &&) = default;
+
+  FunctionRecord(const FunctionRecord &FR)
+      : Name(FR.Name), Filenames(FR.Filenames),
+        CountedRegions(FR.CountedRegions),
+        CountedBranchRegions(FR.CountedBranchRegions),
+        MCDCRecords(FR.MCDCRecords), ExecutionCount(FR.ExecutionCount){}
 
   void pushMCDCRecord(MCDCRecord &&Record) {
     MCDCRecords.push_back(std::move(Record));
@@ -745,8 +752,7 @@ struct FunctionRecord {
   void pushRegion(CounterMappingRegion Region, uint64_t Count,
                   uint64_t FalseCount) {
     if (Region.isBranch()) {
-      CountedBranchRegions.emplace_back(Region, Count, FalseCount);
-      // If either counter is hard-coded to zero, then this region represents a
+      CountedBranchRegions.emplace_back(Region, Count, FalseCount);      // If either counter is hard-coded to zero, then this region represents a
       // constant-folded branch.
       CountedBranchRegions.back().TrueFolded = Region.Count.isZero();
       CountedBranchRegions.back().FalseFolded = Region.FalseCount.isZero();
@@ -1003,7 +1009,8 @@ class CoverageMapping {
       ArrayRef<std::unique_ptr<CoverageMappingReader>> CoverageReaders,
       std::optional<std::reference_wrapper<IndexedInstrProfReader>>
           &ProfileReader,
-      CoverageMapping &Coverage);
+      CoverageMapping &Coverage, StringRef ObjectFilename = "",
+      bool ShowArchExecutables = false, bool MergeBinaryCoverage = false);
 
   // Load coverage records from file.
   static Error
@@ -1011,13 +1018,17 @@ class CoverageMapping {
                std::optional<std::reference_wrapper<IndexedInstrProfReader>>
                    &ProfileReader,
                CoverageMapping &Coverage, bool &DataFound,
-               SmallVectorImpl<object::BuildID> *FoundBinaryIDs = nullptr);
+               SmallVectorImpl<object::BuildID> *FoundBinaryIDs = nullptr,
+               StringRef ObjectFilename = "", bool ShowArchExecutables = false,
+               bool MergeBinaryCoverage = false);
 
   /// Add a function record corresponding to \p Record.
   Error loadFunctionRecord(
       const CoverageMappingRecord &Record,
       const std::optional<std::reference_wrapper<IndexedInstrProfReader>>
-          &ProfileReader);
+          &ProfileReader,
+      StringRef ObjectFilename = "", bool ShowArchExecutables = false,
+      bool MergeBinaryCoverage = false);
 
   /// Look up the indices for function records which are at least partially
   /// defined in the specified file. This is guaranteed to return a superset of
@@ -1044,7 +1055,8 @@ public:
        std::optional<StringRef> ProfileFilename, vfs::FileSystem &FS,
        ArrayRef<StringRef> Arches = {}, StringRef CompilationDir = "",
        const object::BuildIDFetcher *BIDFetcher = nullptr,
-       bool CheckBinaryIDs = false);
+       bool CheckBinaryIDs = false, bool ShowArchExecutables = false,
+       bool MergeBinaryCoverage = false);
 
   /// The number of functions that couldn't have their profiles mapped.
   ///
@@ -1069,7 +1081,8 @@ public:
   /// The given filename must be the name as recorded in the coverage
   /// information. That is, only names returned from getUniqueSourceFiles will
   /// yield a result.
-  LLVM_ABI CoverageData getCoverageForFile(StringRef Filename) const;
+  LLVM_ABI CoverageData getCoverageForFile(
+      StringRef Filename, bool MergeBinaryCoverage = false) const;
 
   /// Get the coverage for a particular function.
   LLVM_ABI CoverageData
@@ -1234,8 +1247,10 @@ uint64_t getFuncNameRef(const FuncRecordTy *Record) {
 /// a hash.
 template <class FuncRecordTy, llvm::endianness Endian>
 Error getFuncNameViaRef(const FuncRecordTy *Record,
-                        InstrProfSymtab &ProfileNames, StringRef &FuncName) {
+                        InstrProfSymtab &ProfileNames, StringRef &FuncName,
+                        StringRef ObjectFilename = "") {
   uint64_t NameRef = getFuncNameRef<FuncRecordTy, Endian>(Record);
+  ProfileNames.setObjectFilename(ObjectFilename);
   FuncName = ProfileNames.getFuncOrVarName(NameRef);
   return Error::success();
 }
@@ -1285,7 +1300,8 @@ struct CovMapFunctionRecordV1 {
 
   /// Return the PGO name of the function.
   template <llvm::endianness Endian>
-  Error getFuncName(InstrProfSymtab &ProfileNames, StringRef &FuncName) const {
+  Error getFuncName(InstrProfSymtab &ProfileNames, StringRef &FuncName,
+                    StringRef ObjectFilename = "") const {
     IntPtrT NameRef = getFuncNameRef<Endian>();
     uint32_t NameS = support::endian::byte_swap<uint32_t, Endian>(NameSize);
     FuncName = ProfileNames.getFuncName(NameRef, NameS);
@@ -1334,7 +1350,8 @@ struct CovMapFunctionRecordV2 {
   }
 
   template <llvm::endianness Endian>
-  Error getFuncName(InstrProfSymtab &ProfileNames, StringRef &FuncName) const {
+  Error getFuncName(InstrProfSymtab &ProfileNames, StringRef &FuncName,
+                    StringRef ObjectFilename = "") const {
     return accessors::getFuncNameViaRef<ThisT, Endian>(this, ProfileNames,
                                                        FuncName);
   }
@@ -1378,9 +1395,10 @@ struct CovMapFunctionRecordV3 {
   }
 
   template <llvm::endianness Endian>
-  Error getFuncName(InstrProfSymtab &ProfileNames, StringRef &FuncName) const {
-    return accessors::getFuncNameViaRef<ThisT, Endian>(this, ProfileNames,
-                                                       FuncName);
+  Error getFuncName(InstrProfSymtab &ProfileNames, StringRef &FuncName,
+                    StringRef ObjectFilename = "") const {
+    return accessors::getFuncNameViaRef<ThisT, Endian>(
+        this, ProfileNames, FuncName, ObjectFilename);
   }
 
   /// Get the filename set reference.

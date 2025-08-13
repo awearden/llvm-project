@@ -13,8 +13,8 @@
 #ifndef LLVM_COV_SOURCECOVERAGEVIEW_H
 #define LLVM_COV_SOURCECOVERAGEVIEW_H
 
-#include "CoverageViewOptions.h"
 #include "CoverageSummaryInfo.h"
+#include "CoverageViewOptions.h"
 #include "llvm/ProfileData/Coverage/CoverageMapping.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include <vector>
@@ -182,6 +182,13 @@ class SourceCoverageView {
 
   bool BinaryCounters;
 
+  /// Contains the object file path.
+  std::vector<StringRef> ObjectFilenames;
+
+  DenseMap<StringRef, uint64_t> FunctionNameToObjectFile;
+
+  bool ShowArchExecutables;
+
   /// Get the first uncovered line number for the source file.
   unsigned getFirstUncoveredLineNo();
 
@@ -206,6 +213,9 @@ protected:
 
   /// Render the source name for the view.
   virtual void renderSourceName(raw_ostream &OS, bool WholeFile) = 0;
+
+  /// Render the Architecture and Objectfile for the view.
+  virtual void renderArchandObj(raw_ostream &OS, StringRef ObjectFilename) = 0;
 
   /// Render the line prefix at the given \p ViewDepth.
   virtual void renderLinePrefix(raw_ostream &OS, unsigned ViewDepth) = 0;
@@ -245,7 +255,8 @@ protected:
 
   /// Render an instantiation view and any nested views.
   virtual void renderInstantiationView(raw_ostream &OS, InstantiationView &ISV,
-                                       unsigned ViewDepth) = 0;
+                                       unsigned ViewDepth,
+                                       StringRef ObjectFilename, bool ShowArchExecutables) = 0;
 
   /// Render a branch view and any nested views.
   virtual void renderBranchView(raw_ostream &OS, BranchView &BRV,
@@ -284,16 +295,21 @@ protected:
 
   SourceCoverageView(StringRef SourceName, const MemoryBuffer &File,
                      const CoverageViewOptions &Options,
-                     CoverageData &&CoverageInfo)
+                     CoverageData &&CoverageInfo,
+                     std::vector<StringRef> ObjectFilenames)
       : SourceName(SourceName), File(File), Options(Options),
         CoverageInfo(std::move(CoverageInfo)),
         BinaryCounters(Options.BinaryCounters ||
-                       CoverageInfo.getSingleByteCoverage()) {}
+                       CoverageInfo.getSingleByteCoverage()),
+        ObjectFilenames(ObjectFilenames) {}
 
 public:
+  
+  void setShowArchExecutables(bool ArchExecFlag){ShowArchExecutables = ArchExecFlag;};
   static std::unique_ptr<SourceCoverageView>
   create(StringRef SourceName, const MemoryBuffer &File,
-         const CoverageViewOptions &Options, CoverageData &&CoverageInfo);
+         const CoverageViewOptions &Options, CoverageData &&CoverageInfo,
+         std::vector<StringRef> ObjectFilenames = {});
 
   virtual ~SourceCoverageView() {}
 
@@ -319,7 +335,8 @@ public:
   /// Print the code coverage information for a specific portion of a
   /// source file to the output stream.
   void print(raw_ostream &OS, bool WholeFile, bool ShowSourceName,
-             bool ShowTitle, unsigned ViewDepth = 0);
+             bool ShowTitle, unsigned ViewDepth = 0,
+             StringRef ObjectFilename = "");
 };
 
 } // namespace llvm

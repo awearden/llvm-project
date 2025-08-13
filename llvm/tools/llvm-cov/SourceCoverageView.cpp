@@ -18,6 +18,7 @@
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/LineIterator.h"
 #include "llvm/Support/Path.h"
+#include <vector>
 
 using namespace llvm;
 
@@ -145,14 +146,15 @@ bool SourceCoverageView::hasSubViews() const {
 std::unique_ptr<SourceCoverageView>
 SourceCoverageView::create(StringRef SourceName, const MemoryBuffer &File,
                            const CoverageViewOptions &Options,
-                           CoverageData &&CoverageInfo) {
+                           CoverageData &&CoverageInfo,
+                           std::vector<StringRef> ObjectFilenames) {
   switch (Options.Format) {
   case CoverageViewOptions::OutputFormat::Text:
     return std::make_unique<SourceCoverageViewText>(
-        SourceName, File, Options, std::move(CoverageInfo));
+        SourceName, File, Options, std::move(CoverageInfo), ObjectFilenames);
   case CoverageViewOptions::OutputFormat::HTML:
     return std::make_unique<SourceCoverageViewHTML>(
-        SourceName, File, Options, std::move(CoverageInfo));
+        SourceName, File, Options, std::move(CoverageInfo), ObjectFilenames);
   case CoverageViewOptions::OutputFormat::Lcov:
     // Unreachable because CodeCoverage.cpp should terminate with an error
     // before we get here.
@@ -192,14 +194,18 @@ void SourceCoverageView::addInstantiation(
 
 void SourceCoverageView::print(raw_ostream &OS, bool WholeFile,
                                bool ShowSourceName, bool ShowTitle,
-                               unsigned ViewDepth) {
+                               unsigned ViewDepth, StringRef ObjectFilename) {
   if (ShowTitle)
     renderTitle(OS, "Coverage Report");
 
   renderViewHeader(OS);
 
-  if (ShowSourceName)
+  if (ShowSourceName) {
     renderSourceName(OS, WholeFile);
+    if (!ObjectFilename.empty() && ShowArchExecutables) {
+      renderArchandObj(OS, ObjectFilename);
+    }
+  }
 
   renderTableHeader(OS, ViewDepth);
 
@@ -223,7 +229,6 @@ void SourceCoverageView::print(raw_ostream &OS, bool WholeFile,
   auto EndSegment = CoverageInfo.end();
   LineCoverageIterator LCI{CoverageInfo, 1};
   LineCoverageIterator LCIEnd = LCI.getEnd();
-
   unsigned FirstLine = StartSegment != EndSegment ? StartSegment->Line : 0;
   for (line_iterator LI(File, /*SkipBlanks=*/false); !LI.is_at_eof();
        ++LI, ++LCI) {
@@ -276,7 +281,17 @@ void SourceCoverageView::print(raw_ostream &OS, bool WholeFile,
     }
     for (; NextISV != EndISV && NextISV->Line == LI.line_number(); ++NextISV) {
       renderViewDivider(OS, ViewDepth + 1);
-      renderInstantiationView(OS, *NextISV, ViewDepth + 1);
+      renderInstantiationView(
+          OS, *NextISV, ViewDepth + 1,
+          ObjectFilenames[FunctionNameToObjectFile[NextISV->FunctionName]], ShowArchExecutables);
+      if (FunctionNameToObjectFile.find(NextISV->FunctionName) ==
+          FunctionNameToObjectFile.end()) {
+        FunctionNameToObjectFile[NextISV->FunctionName] = 0;
+      } else {
+        FunctionNameToObjectFile[NextISV->FunctionName] +=
+            (FunctionNameToObjectFile[NextISV->FunctionName] + 1) %
+            ObjectFilenames.size();
+      }
       RenderedSubView = true;
     }
     for (; NextBRV != EndBRV && NextBRV->Line == LI.line_number(); ++NextBRV) {

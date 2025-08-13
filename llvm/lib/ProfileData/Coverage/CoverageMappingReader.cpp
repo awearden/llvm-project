@@ -381,7 +381,6 @@ Error RawCoverageMappingReader::readMappingRegionsSubArray(
         CounterMappingContext(Expressions).dump(C, dbgs());
       dbgs() << "\n";
     });
-
     auto CMR = CounterMappingRegion(
         C, C2, InferredFileID, ExpandedFileID, LineStart, ColumnStart,
         LineStart + NumLines, ColumnEnd, Kind, Params);
@@ -585,7 +584,7 @@ struct CovMapFuncRecordReader {
   static Expected<std::unique_ptr<CovMapFuncRecordReader>>
   get(CovMapVersion Version, InstrProfSymtab &P,
       std::vector<BinaryCoverageReader::ProfileMappingRecord> &R, StringRef D,
-      std::vector<std::string> &F);
+      std::vector<std::string> &F, StringRef ObjectFilename = "");
 };
 
 // A class for reading coverage mapping function records for a module.
@@ -614,8 +613,8 @@ class VersionedCovMapFuncRecordReader : public CovMapFuncRecordReader {
   // records, which were emitted for inline functions which were seen but
   // not used in the corresponding translation unit.
   Error insertFunctionRecordIfNeeded(const FuncRecordType *CFR,
-                                     StringRef Mapping,
-                                     FilenameRange FileRange) {
+                                     StringRef Mapping, FilenameRange FileRange,
+                                     StringRef ObjectFilename = "") {
     ++CovMapNumRecords;
     uint64_t FuncHash = CFR->template getFuncHash<Endian>();
     NameRefType NameRef = CFR->template getFuncNameRef<Endian>();
@@ -623,7 +622,8 @@ class VersionedCovMapFuncRecordReader : public CovMapFuncRecordReader {
         FunctionRecords.insert(std::make_pair(NameRef, Records.size()));
     if (InsertResult.second) {
       StringRef FuncName;
-      if (Error Err = CFR->template getFuncName<Endian>(ProfileNames, FuncName))
+      if (Error Err = CFR->template getFuncName<Endian>(ProfileNames, FuncName,
+                                                        ObjectFilename))
         return Err;
       if (FuncName.empty())
         return make_error<InstrProfError>(instrprof_error::malformed,
@@ -817,7 +817,7 @@ template <class IntPtrT, llvm::endianness Endian>
 Expected<std::unique_ptr<CovMapFuncRecordReader>> CovMapFuncRecordReader::get(
     CovMapVersion Version, InstrProfSymtab &P,
     std::vector<BinaryCoverageReader::ProfileMappingRecord> &R, StringRef D,
-    std::vector<std::string> &F) {
+    std::vector<std::string> &F, StringRef ObjectFilename) {
   using namespace coverage;
 
   switch (Version) {
@@ -830,6 +830,7 @@ Expected<std::unique_ptr<CovMapFuncRecordReader>> CovMapFuncRecordReader::get(
   case CovMapVersion::Version5:
   case CovMapVersion::Version6:
   case CovMapVersion::Version7:
+    P.setObjectFilename(ObjectFilename);
     // Decompress the name data.
     if (Error E = P.create(P.getNameData()))
       return std::move(E);
@@ -859,7 +860,8 @@ template <typename T, llvm::endianness Endian>
 static Error readCoverageMappingData(
     InstrProfSymtab &ProfileNames, StringRef CovMap, StringRef FuncRecords,
     std::vector<BinaryCoverageReader::ProfileMappingRecord> &Records,
-    StringRef CompilationDir, std::vector<std::string> &Filenames) {
+    StringRef CompilationDir, std::vector<std::string> &Filenames,
+    StringRef ObjectFilename = "") {
   using namespace coverage;
 
   // Read the records in the coverage data section.
@@ -870,7 +872,8 @@ static Error readCoverageMappingData(
     return make_error<CoverageMapError>(coveragemap_error::unsupported_version);
   Expected<std::unique_ptr<CovMapFuncRecordReader>> ReaderExpected =
       CovMapFuncRecordReader::get<T, Endian>(Version, ProfileNames, Records,
-                                             CompilationDir, Filenames);
+                                             CompilationDir, Filenames,
+                                             ObjectFilename);
   if (Error E = ReaderExpected.takeError())
     return E;
   auto Reader = std::move(ReaderExpected.get());
@@ -1270,7 +1273,8 @@ Expected<std::vector<std::unique_ptr<BinaryCoverageReader>>>
 BinaryCoverageReader::create(
     MemoryBufferRef ObjectBuffer, StringRef Arch,
     SmallVectorImpl<std::unique_ptr<MemoryBuffer>> &ObjectFileBuffers,
-    StringRef CompilationDir, SmallVectorImpl<object::BuildIDRef> *BinaryIDs) {
+    StringRef CompilationDir, SmallVectorImpl<object::BuildIDRef> *BinaryIDs,
+    StringRef ObjectFilename) {
   std::vector<std::unique_ptr<BinaryCoverageReader>> Readers;
 
   if (ObjectBuffer.getBuffer().size() > sizeof(TestingFormatMagic)) {
