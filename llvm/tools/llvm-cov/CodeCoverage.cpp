@@ -114,7 +114,8 @@ private:
 
   /// Create the main source view of a particular source file.
   std::unique_ptr<SourceCoverageView>
-  createSourceFileView(StringRef SourceFile, const CoverageMapping &Coverage);
+  createSourceFileView(StringRef SourceFile, const CoverageMapping &Coverage,
+                       std::vector<StringRef> ObjectFilenames = {});
 
   /// Load the coverage mapping data. Return nullptr if an error occurred.
   std::unique_ptr<CoverageMapping> load();
@@ -131,7 +132,8 @@ private:
 
   /// Write out a source file view to the filesystem.
   void writeSourceFileView(StringRef SourceFile, CoverageMapping *Coverage,
-                           CoveragePrinter *Printer, bool ShowFilenames);
+                           CoveragePrinter *Printer, bool ShowFilenames,
+                           std::vector<StringRef> ObjectFilenames);
 
   typedef llvm::function_ref<int(int, const char **)> CommandLineParserType;
 
@@ -388,22 +390,24 @@ CodeCoverageTool::createFunctionView(const FunctionRecord &Function,
 
   return View;
 }
-
 std::unique_ptr<SourceCoverageView>
 CodeCoverageTool::createSourceFileView(StringRef SourceFile,
-                                       const CoverageMapping &Coverage) {
+                                       const CoverageMapping &Coverage,
+                                       std::vector<StringRef> ObjectFilenames) {
   auto SourceBuffer = getSourceFile(SourceFile);
   if (!SourceBuffer)
     return nullptr;
-  auto FileCoverage = Coverage.getCoverageForFile(SourceFile);
+  auto FileCoverage =
+      Coverage.getCoverageForFile(SourceFile, ViewOpts.MergeBinaryCoverage);
   if (FileCoverage.empty())
     return nullptr;
 
   auto Branches = FileCoverage.getBranches();
   auto Expansions = FileCoverage.getExpansions();
   auto MCDCRecords = FileCoverage.getMCDCRecords();
-  auto View = SourceCoverageView::create(SourceFile, SourceBuffer.get(),
-                                         ViewOpts, std::move(FileCoverage));
+  auto View =
+      SourceCoverageView::create(SourceFile, SourceBuffer.get(), ViewOpts,
+                                 std::move(FileCoverage), ObjectFilenames);
   attachExpansionSubViews(*View, Expansions, Coverage);
   attachBranchSubViews(*View, Branches);
   attachMCDCSubViews(*View, MCDCRecords);
@@ -464,7 +468,8 @@ std::unique_ptr<CoverageMapping> CodeCoverageTool::load() {
   auto FS = vfs::getRealFileSystem();
   auto CoverageOrErr = CoverageMapping::load(
       ObjectFilenames, PGOFilename, *FS, CoverageArches,
-      ViewOpts.CompilationDirectory, BIDFetcher.get(), CheckBinaryIDs);
+      ViewOpts.CompilationDirectory, BIDFetcher.get(), CheckBinaryIDs,
+      ViewOpts.ShowArchExecutables, ViewOpts.MergeBinaryCoverage);
   if (Error E = CoverageOrErr.takeError()) {
     error("failed to load coverage: " + toString(std::move(E)));
     return nullptr;
@@ -482,7 +487,6 @@ std::unique_ptr<CoverageMapping> CodeCoverageTool::load() {
                << '\n';
     }
   }
-
   remapPathNames(*Coverage);
 
   if (!SourceFiles.empty())
@@ -628,12 +632,10 @@ void CodeCoverageTool::demangleSymbols(const CoverageMapping &Coverage) {
     // Splitting by '\n' keeps '\r's, so cut them now.
     DC.DemangledNames[Function.Name] = std::string(Symbols[I++].rtrim());
 }
-
-void CodeCoverageTool::writeSourceFileView(StringRef SourceFile,
-                                           CoverageMapping *Coverage,
-                                           CoveragePrinter *Printer,
-                                           bool ShowFilenames) {
-  auto View = createSourceFileView(SourceFile, *Coverage);
+void CodeCoverageTool::writeSourceFileView(
+    StringRef SourceFile, CoverageMapping *Coverage, CoveragePrinter *Printer,
+    bool ShowFilenames, std::vector<StringRef> ObjectFilenames) {
+  auto View = createSourceFileView(SourceFile, *Coverage, ObjectFilenames);
   if (!View) {
     warning("The file '" + SourceFile + "' isn't covered.");
     return;
@@ -800,6 +802,17 @@ int CodeCoverageTool::run(Command Cmd, int argc, const char **argv) {
   cl::opt<bool> CheckBinaryIDs(
       "check-binary-ids", cl::desc("Fail if an object couldn't be found for a "
                                    "binary ID in the profile"));
+  cl::opt<bool> ShowArchExecutables(
+      "show-arch-executables",
+      cl::desc(
+          "Show coverage per architecture and the associated executable slice"),
+      cl::init(false));
+
+  cl::opt<bool> MergeBinaryCoverage(
+      "merge-binary-coverage",
+      cl::desc("Enable merging of coverage profiles from binaries compiled for "
+               "different architectures"),
+      cl::init(false));
 
   auto commandLineParser = [&, this](int argc, const char **argv) -> int {
     cl::ParseCommandLineOptions(argc, argv, "LLVM code coverage tool\n");
@@ -966,6 +979,8 @@ int CodeCoverageTool::run(Command Cmd, int argc, const char **argv) {
     ViewOpts.ExportSummaryOnly = SummaryOnly;
     ViewOpts.NumThreads = NumThreads;
     ViewOpts.CompilationDirectory = CompilationDirectory;
+    ViewOpts.ShowArchExecutables = ShowArchExecutables;
+    ViewOpts.MergeBinaryCoverage = MergeBinaryCoverage;
 
     return 0;
   };
@@ -1225,13 +1240,17 @@ int CodeCoverageTool::doShow(int argc, const char **argv,
   if (!ViewOpts.hasOutputDirectory() || S.ThreadsRequested == 1) {
     for (const std::string &SourceFile : SourceFiles)
       writeSourceFileView(SourceFile, Coverage.get(), Printer.get(),
-                          ShowFilenames);
+                          ShowFilenames, ObjectFilenames);
   } else {
     // In -output-dir mode, it's safe to use multiple threads to print files.
     DefaultThreadPool Pool(S);
     for (const std::string &SourceFile : SourceFiles)
-      Pool.async(&CodeCoverageTool::writeSourceFileView, this, SourceFile,
-                 Coverage.get(), Printer.get(), ShowFilenames);
+      Pool.async(
+          static_cast<void (CodeCoverageTool:: *)(
+              StringRef, CoverageMapping *, CoveragePrinter *, bool,
+              std::vector<StringRef>)>(&CodeCoverageTool::writeSourceFileView),
+          this, SourceFile, Coverage.get(), Printer.get(), ShowFilenames,
+          ObjectFilenames);
     Pool.wait();
   }
 

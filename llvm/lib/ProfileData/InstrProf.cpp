@@ -555,7 +555,6 @@ Error InstrProfSymtab::addVTableWithName(GlobalVariable &VTable,
   auto NameToGUIDMap = [&](StringRef Name) -> Error {
     if (Error E = addSymbolName(Name))
       return E;
-
     bool Inserted = true;
     std::tie(std::ignore, Inserted) = MD5VTableMap.try_emplace(
         GlobalValue::getGUIDAssumingExternalLinkage(Name), &VTable);
@@ -609,7 +608,6 @@ Error readAndDecodeStrings(StringRef NameStrings,
     for (StringRef &Name : Names)
       if (Error E = NameCallback(Name))
         return E;
-
     while (P < EndP && *P == 0)
       P++;
   }

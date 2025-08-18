@@ -14,6 +14,7 @@
 #include "CoverageReport.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/StringExtras.h"
+#include "llvm/Object/ObjectFile.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/Format.h"
 #include "llvm/Support/Path.h"
@@ -137,6 +138,45 @@ void SourceCoverageViewText::renderViewFooter(raw_ostream &) {}
 void SourceCoverageViewText::renderSourceName(raw_ostream &OS, bool WholeFile) {
   getOptions().colored_ostream(OS, raw_ostream::CYAN) << getSourceName()
                                                       << ":\n";
+}
+
+static Expected<std::string>
+getArchitectureFromExecutable(StringRef ExecutablePath) {
+  ErrorOr<std::unique_ptr<MemoryBuffer>> BufferOrError =
+      MemoryBuffer::getFile(ExecutablePath);
+  if (!BufferOrError) {
+    return createStringError(BufferOrError.getError(),
+                             "Failed to load input file");
+  }
+
+  Expected<std::unique_ptr<object::ObjectFile>> ObjectOrError =
+      object::ObjectFile::createObjectFile(
+          BufferOrError.get()->getMemBufferRef());
+  if (!ObjectOrError) {
+    return ObjectOrError.takeError();
+  }
+
+  std::unique_ptr<llvm::object::ObjectFile> &Object = ObjectOrError.get();
+
+  StringRef ArchStr = Object->getArch() != Triple::UnknownArch
+                          ? Triple::getArchTypeName(Object->getArch())
+                          : "unknown";
+
+  return ArchStr.str();
+}
+
+void SourceCoverageViewText::renderArchandObj(raw_ostream &OS,
+                                              StringRef ObjectFilename) {
+  Expected<std::string> ArchOrErr =
+      getArchitectureFromExecutable(ObjectFilename);
+  if (!ArchOrErr) {
+    logAllUnhandledErrors(ArchOrErr.takeError(), llvm::errs(),
+                          "Error extracting architecture: ");
+    return;
+  }
+  StringRef Arch = *ArchOrErr;
+  getOptions().colored_ostream(OS, raw_ostream::CYAN)
+      << "\t-" + Arch + "\n" + "\t-" + ObjectFilename << ":\n";
 }
 
 void SourceCoverageViewText::renderLinePrefix(raw_ostream &OS,
@@ -389,7 +429,8 @@ void SourceCoverageViewText::renderMCDCView(raw_ostream &OS, MCDCView &MRV,
 
 void SourceCoverageViewText::renderInstantiationView(raw_ostream &OS,
                                                      InstantiationView &ISV,
-                                                     unsigned ViewDepth) {
+                                                     unsigned ViewDepth,
+                                                     StringRef ObjectFilename) {
   renderLinePrefix(OS, ViewDepth);
   OS << ' ';
   if (!ISV.View)
@@ -397,7 +438,7 @@ void SourceCoverageViewText::renderInstantiationView(raw_ostream &OS,
         << "Unexecuted instantiation: " << ISV.FunctionName << "\n";
   else
     ISV.View->print(OS, /*WholeFile=*/false, /*ShowSourceName=*/true,
-                    /*ShowTitle=*/false, ViewDepth);
+                    /*ShowTitle=*/false, ViewDepth, ObjectFilename);
 }
 
 void SourceCoverageViewText::renderTitle(raw_ostream &OS, StringRef Title) {

@@ -18,7 +18,6 @@
 #include "llvm/ADT/StringRef.h"
 #include "llvm/IR/ProfileSummary.h"
 #include "llvm/ProfileData/InstrProf.h"
-// #include "llvm/ProfileData/MemProf.h"
 #include "llvm/ProfileData/MemProfRadixTree.h"
 #include "llvm/ProfileData/ProfileCommon.h"
 #include "llvm/ProfileData/SymbolRemappingReader.h"
@@ -158,20 +157,21 @@ Expected<std::unique_ptr<InstrProfReader>> InstrProfReader::create(
     const InstrProfCorrelator *Correlator,
     const object::BuildIDFetcher *BIDFetcher,
     const InstrProfCorrelator::ProfCorrelatorKind BIDFetcherCorrelatorKind,
-    std::function<void(Error)> Warn) {
+    std::function<void(Error)> Warn, StringRef ObjectFilename) {
   // Set up the buffer to read.
   auto BufferOrError = setupMemoryBuffer(Path, FS);
   if (Error E = BufferOrError.takeError())
     return std::move(E);
   return InstrProfReader::create(std::move(BufferOrError.get()), Correlator,
-                                 BIDFetcher, BIDFetcherCorrelatorKind, Warn);
+                                 BIDFetcher, BIDFetcherCorrelatorKind, Warn,
+                                 ObjectFilename);
 }
 
 Expected<std::unique_ptr<InstrProfReader>> InstrProfReader::create(
     std::unique_ptr<MemoryBuffer> Buffer, const InstrProfCorrelator *Correlator,
     const object::BuildIDFetcher *BIDFetcher,
     const InstrProfCorrelator::ProfCorrelatorKind BIDFetcherCorrelatorKind,
-    std::function<void(Error)> Warn) {
+    std::function<void(Error)> Warn, StringRef ObjectFilename) {
   if (Buffer->getBufferSize() == 0)
     return make_error<InstrProfError>(instrprof_error::empty_raw_profile);
 
@@ -193,15 +193,19 @@ Expected<std::unique_ptr<InstrProfReader>> InstrProfReader::create(
     return make_error<InstrProfError>(instrprof_error::unrecognized_format);
 
   // Initialize the reader and return the result.
+
+  // Pass the ObjectFilename to Result
+  if (Result) {
+    Result->setObjectFilename(ObjectFilename);
+  }
   if (Error E = initializeReader(*Result))
     return std::move(E);
-
   return std::move(Result);
 }
 
 Expected<std::unique_ptr<IndexedInstrProfReader>>
 IndexedInstrProfReader::create(const Twine &Path, vfs::FileSystem &FS,
-                               const Twine &RemappingPath) {
+                               const Twine &RemappingPath, StringRef ObjectFilename) {
   // Set up the buffer to read.
   auto BufferOrError = setupMemoryBuffer(Path, FS);
   if (Error E = BufferOrError.takeError())

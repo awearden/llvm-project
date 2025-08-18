@@ -216,7 +216,8 @@ public:
   create(MemoryBufferRef ObjectBuffer, StringRef Arch,
          SmallVectorImpl<std::unique_ptr<MemoryBuffer>> &ObjectFileBuffers,
          StringRef CompilationDir = "",
-         SmallVectorImpl<object::BuildIDRef> *BinaryIDs = nullptr);
+         SmallVectorImpl<object::BuildIDRef> *BinaryIDs = nullptr,
+         StringRef ObjectFilename = "");
 
   static Expected<std::unique_ptr<BinaryCoverageReader>>
   createCoverageReaderFromBuffer(

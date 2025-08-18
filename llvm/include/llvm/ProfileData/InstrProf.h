@@ -40,6 +40,7 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <list>
 #include <memory>
@@ -512,7 +513,13 @@ public:
   // FIXME: Unify this with `FunctionSamples::getCanonicalFnName`.
   LLVM_ABI static StringRef getCanonicalName(StringRef PGOName);
 
+  StringRef getObjectFilename() { return ObjectFilename; }
+  void setObjectFilename(StringRef ObjectFilename) {
+    this->ObjectFilename = ObjectFilename;
+  }
+
 private:
+  StringRef ObjectFilename;
   using AddrIntervalMap =
       IntervalMap<uint64_t, uint64_t, 4, IntervalMapHalfOpenInfo<uint64_t>>;
   StringRef Data;
@@ -640,10 +647,19 @@ public:
 
     // Insert into NameTab so that MD5NameMap (a vector that will be sorted)
     // won't have duplicated entries in the first place.
+
+    uint64_t HashValue = IndexedInstrProf::ComputeHash(SymbolName);
+    std::string HashStr(std::to_string(HashValue));
+    // if ObjectFilename is not empty from the --object-aware-hashing flag, add
+    // ObjectFilename to hash context
+    if (!ObjectFilename.empty()) {
+      std::string CombinedStr = HashStr + ":" + ObjectFilename.str();
+      StringRef HashRef = CombinedStr;
+      HashValue = IndexedInstrProf::ComputeHash(HashRef);
+    }
     auto Ins = NameTab.insert(SymbolName);
     if (Ins.second) {
-      MD5NameMap.push_back(std::make_pair(
-          IndexedInstrProf::ComputeHash(SymbolName), Ins.first->getKey()));
+      MD5NameMap.push_back(std::make_pair(HashValue, Ins.first->getKey()));
       Sorted = false;
     }
     return Error::success();
@@ -777,9 +793,16 @@ StringRef InstrProfSymtab::getFuncOrVarNameIfDefined(uint64_t MD5Hash) const {
 
 StringRef InstrProfSymtab::getFuncOrVarName(uint64_t MD5Hash) const {
   finalizeSymtab();
+  std::string TempMD5HashStr = std::to_string(MD5Hash);
+  if (!ObjectFilename.empty()) {
+    std::string CombinedHashStr = TempMD5HashStr + ":" + ObjectFilename.str();
+    llvm::StringRef CombinedHashRef(CombinedHashStr);
+    MD5Hash = IndexedInstrProf::ComputeHash(CombinedHashRef);
+  }
   auto Result = llvm::lower_bound(MD5NameMap, MD5Hash,
                                   [](const std::pair<uint64_t, StringRef> &LHS,
                                      uint64_t RHS) { return LHS.first < RHS; });
+
   if (Result != MD5NameMap.end() && Result->first == MD5Hash)
     return Result->second;
   return StringRef();
